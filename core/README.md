@@ -11,9 +11,15 @@ This crate owns the Telegram client and domain logic.
 
 None as of 2026-01-05.
 
-If a future change adds native dependencies (for example: OpenSSL, libsodium, sqlite),
+If a future change adds native dependencies (for example: OpenSSL, libsodium,
+sqlite),
 record them here with:
 
 - why the dependency is needed
 - which crate introduced it
 - install steps per OS (macOS/Linux/Windows)
+
+## Testing
+
+- UI snapshot tests (workspace): `INSTA_UPDATE=always mise exec -- cargo test -p
+  ui`

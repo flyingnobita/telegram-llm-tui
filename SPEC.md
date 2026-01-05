@@ -8,7 +8,8 @@ We will store concrete decisions as short ADRs (Architecture Decision Records).
 
 - Location: `docs/adr/`
 - Naming: `YYYYMMDD-short-title.md`
-- When: create an ADR as soon as a decision is made (Telegram lib, TUI lib, LLM providers, data-dir layout, etc.)
+- When: create an ADR as soon as a decision is made (Telegram lib, TUI lib, LLM
+  providers, data-dir layout, etc.)
 
 ### ADR template (copy into each new ADR file)
 
@@ -35,9 +36,11 @@ Trade-offs, risks, follow-ups.
 
 - Telegram client library: grammers → `docs/adr/20251231-telegram-client-grammers.md`
 - TUI framework: ratatui → `docs/adr/20251231-tui-ratatui.md`
-- LLM providers & auth strategy: OpenAI + local `.env` for dev-only (prod secret store later) → `docs/adr/20251231-llm-backend-openai-env.md`
+- LLM providers & auth strategy: OpenAI + local `.env` for dev-only (prod secret
+  store later) → `docs/adr/20251231-llm-backend-openai-env.md`
 - Data directory layout: local project dir for dev-only → `docs/adr/20251231-data-dir-local.md`
-- LLM-friendly test framework: `insta` snapshots + `ratatui` test backend → `docs/adr/20260105-llm-friendly-test-framework.md`
+- LLM-friendly test framework: `insta` snapshots + `ratatui` test backend →
+  `docs/adr/20260105-llm-friendly-test-framework.md`
 
 ## Requirements
 
@@ -66,4 +69,5 @@ Trade-offs, risks, follow-ups.
 
 - High-level product goals live in `PLANS.md`.
 - Detailed behavior, workflows, and constraints live in this SPEC.
-- Implementation details and low-level docs should live close to code (e.g., `core/README.md`).
+- Implementation details and low-level docs should live close to code (e.g.,
+  `core/README.md`).
