@@ -1,0 +1,9 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+telegram_llm_core = { path = "../core" }
+ui = { path = "../ui" }
+llm = { path = "../llm" }
