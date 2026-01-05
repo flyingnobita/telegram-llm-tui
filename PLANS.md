@@ -12,7 +12,7 @@
 
 1. [x] Create Cargo workspace with crates: `app` (bin, wiring), `core` (Telegram + domain), `ui` (TUI components), `llm` (providers, prompt templates), `integration-tests`.
 2. [x] Add CI basics: `cargo fmt -- --check`, `clippy -D warnings`, `nextest`. Set Rust toolchain in `rust-toolchain.toml`.
-3. [ ] Keep Telegram integration grammers-only (MTProto) and document any native deps if they appear.
+3. [x] Keep Telegram integration grammers-only (MTProto) and document any native deps if they appear.
 4. [x] Use mise-en-place to manage tool versions (Rust toolchain, build deps, CLI helpers).
 5. [ ] Set up a TUI test harness (headless render/snapshot) and seed unit tests for UI input/behavior.
 
