@@ -1,19 +1,22 @@
 mod config;
 mod prompt;
 
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use telegram_llm_core::telegram::{AuthResult, QrLoginResult, TelegramBootstrap, TelegramConfig};
+use time::{format_description, UtcOffset};
 use tracing::{info, warn};
-use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, LogFormat, LogRotation};
 use crate::prompt::{prompt_line, prompt_secret, AuthMethod};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -79,38 +82,215 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn init_tracing(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
-    let log_path = &config.error_log_path;
-    if let Some(parent) = log_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path)?;
+    ensure_parent_dir(&config.log_file_path)?;
+    ensure_parent_dir(&config.error_log_path)?;
+
+    let log_writer = build_log_writer(
+        &config.log_file_path,
+        config.log_rotation,
+        config.rotation_max_size_bytes,
+        config.rotation_max_files,
+    )?;
+    let error_writer = build_log_writer(
+        &config.error_log_path,
+        config.log_rotation,
+        config.rotation_max_size_bytes,
+        config.rotation_max_files,
+    )?;
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(level_filter_directive(config.log_level)));
-    let stdout_layer = tracing_subscriber::fmt::layer().with_filter(filter);
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(std::sync::Mutex::new(file))
-        .with_ansi(false)
-        .with_filter(tracing_subscriber::filter::LevelFilter::ERROR);
+    match config.log_format {
+        LogFormat::Plain => {
+            let stdout_timer = build_timer();
+            let file_timer = build_timer();
+            let error_timer = build_timer();
+            let stdout_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_ansi(true)
+                .with_timer(stdout_timer)
+                .with_filter(filter.clone());
+            let file_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_writer(log_writer)
+                .with_ansi(false)
+                .with_timer(file_timer)
+                .with_filter(filter);
+            let error_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_writer(error_writer)
+                .with_ansi(false)
+                .with_timer(error_timer)
+                .with_filter(tracing_subscriber::filter::LevelFilter::ERROR);
 
-    tracing_subscriber::registry()
-        .with(stdout_layer)
-        .with(file_layer)
-        .init();
+            tracing_subscriber::registry()
+                .with(stdout_layer)
+                .with(file_layer)
+                .with(error_layer)
+                .init();
+        }
+    }
     Ok(())
 }
 
-fn level_filter_directive(level: LevelFilter) -> &'static str {
+fn level_filter_directive(level: tracing_subscriber::filter::LevelFilter) -> &'static str {
     match level {
-        LevelFilter::ERROR => "error",
-        LevelFilter::WARN => "warn",
-        LevelFilter::INFO => "info",
-        LevelFilter::DEBUG => "debug",
-        LevelFilter::TRACE => "trace",
-        LevelFilter::OFF => "off",
+        tracing_subscriber::filter::LevelFilter::ERROR => "error",
+        tracing_subscriber::filter::LevelFilter::WARN => "warn",
+        tracing_subscriber::filter::LevelFilter::INFO => "info",
+        tracing_subscriber::filter::LevelFilter::DEBUG => "debug",
+        tracing_subscriber::filter::LevelFilter::TRACE => "trace",
+        tracing_subscriber::filter::LevelFilter::OFF => "off",
+    }
+}
+
+fn build_timer() -> impl tracing_subscriber::fmt::time::FormatTime {
+    let offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
+    let format = format_description::parse(
+        "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3][offset_hour sign:mandatory]:[offset_minute]",
+    )
+    .expect("valid time format");
+    tracing_subscriber::fmt::time::OffsetTime::new(offset, format)
+}
+
+fn ensure_parent_dir(path: &Path) -> io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    Ok(())
+}
+
+fn build_log_writer(
+    path: &Path,
+    rotation: LogRotation,
+    max_size_bytes: u64,
+    max_files: usize,
+) -> Result<SharedWriter, Box<dyn std::error::Error>> {
+    let writer: Box<dyn Write + Send> = match rotation {
+        LogRotation::Daily => {
+            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            let file_name = path
+                .file_name()
+                .ok_or_else(|| io::Error::other("missing log file name"))?;
+            Box::new(tracing_appender::rolling::daily(parent, file_name))
+        }
+        LogRotation::Size => Box::new(RotatingFileWriter::new(
+            path.to_path_buf(),
+            max_size_bytes,
+            max_files,
+        )?),
+    };
+    Ok(SharedWriter::new(writer))
+}
+
+struct SharedWriter {
+    inner: Arc<Mutex<Box<dyn Write + Send>>>,
+}
+
+impl SharedWriter {
+    fn new(writer: Box<dyn Write + Send>) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(writer)),
+        }
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedWriter {
+    type Writer = SharedWriterGuard<'a>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        SharedWriterGuard {
+            guard: self.inner.lock().unwrap(),
+        }
+    }
+}
+
+struct SharedWriterGuard<'a> {
+    guard: MutexGuard<'a, Box<dyn Write + Send>>,
+}
+
+impl Write for SharedWriterGuard<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.guard.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.guard.flush()
+    }
+}
+
+struct RotatingFileWriter {
+    base_path: PathBuf,
+    max_bytes: u64,
+    max_files: usize,
+    file: std::fs::File,
+    size: u64,
+}
+
+impl RotatingFileWriter {
+    fn new(base_path: PathBuf, max_bytes: u64, max_files: usize) -> io::Result<Self> {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&base_path)?;
+        let size = file.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+        Ok(Self {
+            base_path,
+            max_bytes,
+            max_files,
+            file,
+            size,
+        })
+    }
+
+    fn rotate_if_needed(&mut self, incoming_len: usize) -> io::Result<()> {
+        if self.max_bytes == 0 || self.max_files == 0 {
+            return Ok(());
+        }
+        let incoming = incoming_len as u64;
+        if self.size + incoming <= self.max_bytes {
+            return Ok(());
+        }
+        self.rotate_files()?;
+        self.file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&self.base_path)?;
+        self.size = 0;
+        Ok(())
+    }
+
+    fn rotate_files(&self) -> io::Result<()> {
+        let base = self.base_path.to_string_lossy().to_string();
+        let oldest = format!("{}.{}", base, self.max_files);
+        let _ = std::fs::remove_file(&oldest);
+
+        for idx in (1..=self.max_files).rev() {
+            let src = if idx == 1 {
+                base.clone()
+            } else {
+                format!("{}.{}", base, idx - 1)
+            };
+            let dst = format!("{}.{}", base, idx);
+            if Path::new(&src).exists() {
+                std::fs::rename(src, dst)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Write for RotatingFileWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.rotate_if_needed(buf.len())?;
+        let written = self.file.write(buf)?;
+        self.size = self.size.saturating_add(written as u64);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
     }
 }
 

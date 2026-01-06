@@ -10,8 +10,14 @@ const DEFAULT_SESSION_PATH: &str = "data/telegram.session";
 const DEFAULT_UPDATE_BUFFER: usize = 100;
 const DEFAULT_AUTH_METHOD: AuthMethod = AuthMethod::Phone;
 const DEFAULT_CONFIG_PATH: &str = "app/config/app.toml";
+const DEFAULT_LOG_FILE_PATH: &str = "data/logs/app.log";
 const DEFAULT_ERROR_LOG_PATH: &str = "data/logs/app-error.log";
 const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::INFO;
+const DEFAULT_LOG_FORMAT: LogFormat = LogFormat::Plain;
+const DEFAULT_LOG_ROTATION: LogRotation = LogRotation::Size;
+const DEFAULT_ROTATION_MAX_SIZE_MB: u64 = 1;
+const DEFAULT_ROTATION_MAX_FILES: usize = 20;
+const DEFAULT_LOG_CONTENT: bool = true;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
@@ -21,8 +27,14 @@ pub struct AppConfig {
     pub update_buffer: usize,
     pub phone_number: Option<String>,
     pub auth_method: AuthMethod,
+    pub log_file_path: PathBuf,
     pub error_log_path: PathBuf,
     pub log_level: LevelFilter,
+    pub log_format: LogFormat,
+    pub log_rotation: LogRotation,
+    pub rotation_max_size_bytes: u64,
+    pub rotation_max_files: usize,
+    pub log_content: bool,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -39,6 +51,14 @@ pub enum ConfigError {
     InvalidLogPath(String),
     #[error("invalid log level: {0}")]
     InvalidLogLevel(String),
+    #[error("invalid log format: {0}")]
+    InvalidLogFormat(String),
+    #[error("invalid log rotation: {0}")]
+    InvalidLogRotation(String),
+    #[error("invalid log rotation size: {0}")]
+    InvalidLogRotationSize(String),
+    #[error("invalid log rotation files: {0}")]
+    InvalidLogRotationFiles(String),
     #[error("failed to read config file: {0}")]
     ConfigRead(String),
     #[error("failed to resolve current directory: {0}")]
@@ -58,8 +78,25 @@ struct AuthSection {
 
 #[derive(Debug, Deserialize)]
 struct LoggingSection {
+    log_file: Option<String>,
     error_log_file: Option<String>,
     level: Option<String>,
+    format: Option<String>,
+    rotation: Option<String>,
+    rotation_max_size_mb: Option<u64>,
+    rotation_max_files: Option<usize>,
+    log_content: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogFormat {
+    Plain,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogRotation {
+    Size,
+    Daily,
 }
 
 impl AppConfig {
@@ -110,6 +147,18 @@ impl AppConfig {
             .transpose()?
             .unwrap_or(DEFAULT_AUTH_METHOD);
 
+        let log_file_path = file_config
+            .as_ref()
+            .and_then(|config| config.logging.as_ref())
+            .and_then(|logging| logging.log_file.as_ref())
+            .map(|raw| parse_log_path(raw.to_string()))
+            .transpose()?;
+
+        let log_file_path = match log_file_path {
+            Some(path) => path,
+            None => resolve_path(DEFAULT_LOG_FILE_PATH)?,
+        };
+
         let error_log_path = file_config
             .as_ref()
             .and_then(|config| config.logging.as_ref())
@@ -130,6 +179,44 @@ impl AppConfig {
             .transpose()?
             .unwrap_or(DEFAULT_LOG_LEVEL);
 
+        let log_format = file_config
+            .as_ref()
+            .and_then(|config| config.logging.as_ref())
+            .and_then(|logging| logging.format.as_ref())
+            .map(|raw| parse_log_format(raw.to_string()))
+            .transpose()?
+            .unwrap_or(DEFAULT_LOG_FORMAT);
+
+        let log_rotation = file_config
+            .as_ref()
+            .and_then(|config| config.logging.as_ref())
+            .and_then(|logging| logging.rotation.as_ref())
+            .map(|raw| parse_log_rotation(raw.to_string()))
+            .transpose()?
+            .unwrap_or(DEFAULT_LOG_ROTATION);
+
+        let rotation_max_size_mb = file_config
+            .as_ref()
+            .and_then(|config| config.logging.as_ref())
+            .and_then(|logging| logging.rotation_max_size_mb)
+            .unwrap_or(DEFAULT_ROTATION_MAX_SIZE_MB);
+
+        let rotation_max_size_bytes = parse_rotation_size_mb(rotation_max_size_mb.to_string())?;
+
+        let rotation_max_files = file_config
+            .as_ref()
+            .and_then(|config| config.logging.as_ref())
+            .and_then(|logging| logging.rotation_max_files)
+            .unwrap_or(DEFAULT_ROTATION_MAX_FILES);
+
+        let rotation_max_files = parse_rotation_files(rotation_max_files.to_string())?;
+
+        let log_content = file_config
+            .as_ref()
+            .and_then(|config| config.logging.as_ref())
+            .and_then(|logging| logging.log_content)
+            .unwrap_or(DEFAULT_LOG_CONTENT);
+
         Ok(Self {
             api_id,
             api_hash,
@@ -137,8 +224,14 @@ impl AppConfig {
             update_buffer,
             phone_number,
             auth_method,
+            log_file_path,
             error_log_path,
             log_level,
+            log_format,
+            log_rotation,
+            rotation_max_size_bytes,
+            rotation_max_files,
+            log_content,
         })
     }
 }
@@ -185,6 +278,43 @@ fn parse_log_level(raw: String) -> Result<LevelFilter, ConfigError> {
     raw.trim()
         .parse::<LevelFilter>()
         .map_err(|_| ConfigError::InvalidLogLevel(raw))
+}
+
+fn parse_log_format(raw: String) -> Result<LogFormat, ConfigError> {
+    match raw.trim().to_lowercase().as_str() {
+        "plain" => Ok(LogFormat::Plain),
+        other => Err(ConfigError::InvalidLogFormat(other.to_string())),
+    }
+}
+
+fn parse_log_rotation(raw: String) -> Result<LogRotation, ConfigError> {
+    match raw.trim().to_lowercase().as_str() {
+        "size" => Ok(LogRotation::Size),
+        "daily" => Ok(LogRotation::Daily),
+        other => Err(ConfigError::InvalidLogRotation(other.to_string())),
+    }
+}
+
+fn parse_rotation_size_mb(raw: String) -> Result<u64, ConfigError> {
+    let trimmed = raw.trim();
+    let value = trimmed
+        .parse::<u64>()
+        .map_err(|_| ConfigError::InvalidLogRotationSize(raw.clone()))?;
+    if value == 0 {
+        return Err(ConfigError::InvalidLogRotationSize(raw));
+    }
+    Ok(value * 1024 * 1024)
+}
+
+fn parse_rotation_files(raw: String) -> Result<usize, ConfigError> {
+    let trimmed = raw.trim();
+    let value = trimmed
+        .parse::<usize>()
+        .map_err(|_| ConfigError::InvalidLogRotationFiles(raw.clone()))?;
+    if value == 0 {
+        return Err(ConfigError::InvalidLogRotationFiles(raw));
+    }
+    Ok(value)
 }
 
 #[cfg(test)]
@@ -388,5 +518,102 @@ mod tests {
 
         let config = result.unwrap();
         assert_eq!(config.log_level, LevelFilter::DEBUG);
+    }
+
+    #[test]
+    fn log_file_path_defaults_when_missing() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+        let _config = EnvGuard::unset("APP_CONFIG_PATH");
+
+        let config = AppConfig::from_env().unwrap();
+        let path = config.log_file_path.to_string_lossy();
+        assert!(path.ends_with(DEFAULT_LOG_FILE_PATH));
+    }
+
+    #[test]
+    fn log_file_path_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-file.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[logging]\nlog_file = \"logs/test.log\"\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        let path = config.log_file_path.to_string_lossy();
+        assert!(path.ends_with("logs/test.log"));
+    }
+
+    #[test]
+    fn log_format_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-format.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[logging]\nformat = \"plain\"\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.log_format, LogFormat::Plain);
+    }
+
+    #[test]
+    fn log_rotation_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-rotation.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[logging]\nrotation = \"daily\"\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.log_rotation, LogRotation::Daily);
+    }
+
+    #[test]
+    fn rotation_limits_read_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-rotation-limits.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(
+            &temp_path,
+            "[logging]\nrotation_max_size_mb = 2\nrotation_max_files = 5\n",
+        )
+        .unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.rotation_max_size_bytes, 2 * 1024 * 1024);
+        assert_eq!(config.rotation_max_files, 5);
+    }
+
+    #[test]
+    fn log_content_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-content.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[logging]\nlog_content = false\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert!(!config.log_content);
     }
 }

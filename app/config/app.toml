@@ -8,7 +8,19 @@ default_method = "phone"
 # - qr: QR login token flow
 
 [logging]
+# Primary app log file path. Relative paths resolve from repo root.
+log_file = "data/logs/app.log"
 # Error log file path. Relative paths resolve from repo root.
 error_log_file = "data/logs/app-error.log"
 # Log level for stdout. Supported: "error", "warn", "info", "debug", "trace".
-level = "warn"
+level = "info"
+# Log format. Supported: "plain".
+format = "plain"
+# Log rotation strategy. Supported: "size", "daily".
+rotation = "size"
+# Max size per log file in megabytes.
+rotation_max_size_mb = 1
+# Number of rotated files to keep.
+rotation_max_files = 20
+# Log Telegram and LLM content verbatim by default.
+log_content = true

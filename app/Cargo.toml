@@ -7,11 +7,13 @@ edition = "2021"
 base64 = "0.22.1"
 dotenvy = "0.15"
 serde = { version = "1", features = ["derive"] }
+time = { version = "0.3", features = ["formatting", "local-offset"] }
 thiserror = "1"
 toml = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
 telegram_llm_core = { path = "../core" }
 ui = { path = "../ui" }
 llm = { path = "../llm" }

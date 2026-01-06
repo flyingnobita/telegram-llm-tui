@@ -41,6 +41,8 @@ Trade-offs, risks, follow-ups.
 - Data directory layout: local project dir for dev-only → `docs/adr/20251231-data-dir-local.md`
 - LLM-friendly test framework: `insta` snapshots + `ratatui` test backend →
   `docs/adr/20260105-llm-friendly-test-framework.md`
+- Logging policy (plain logs, 1 MB rotation, 20 files, content logging on) →
+  `docs/adr/20260106-logging-policy.md`
 
 ## Requirements
 
@@ -56,12 +58,22 @@ Trade-offs, risks, follow-ups.
 
 - Reliable message delivery with retries/backoff.
 - Respect Telegram rate limits; never block the UI thread.
-- Safe handling of secrets (no accidental logs; opt-in prompt logs).
+- Logs are human-readable plain text; Telegram/LLM content logging is enabled
+  by default.
+- Console output uses ANSI colors for readability; log files are non-ANSI.
+- Log timestamps use local time with RFC 3339 offset.
+- Treat logs as sensitive data; do not log auth tokens.
 - Works on macOS first; Linux/Windows follow-up.
+- Primary log file: `data/logs/app.log` (configured in `app/config/app.toml`
+  under
+  `[logging].log_file`).
 - Error log file: `data/logs/app-error.log` (configured in
   `app/config/app.toml` under `[logging].error_log_file`).
 - Log level: configured in `app/config/app.toml` under `[logging].level`
   (default `info`).
+- Log rotation: size-based at 1 MB, keep 20 files (configured in
+  `app/config/app.toml` under `[logging].rotation_max_size_mb` and
+  `[logging].rotation_max_files`).
 
 ### Acceptance criteria (MVP)
 
