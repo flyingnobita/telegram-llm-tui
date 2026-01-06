@@ -1,0 +1,14 @@
+# App defaults
+
+[auth]
+# Default auth method when not overridden.
+default_method = "phone"
+# Supported values: "phone", "qr"
+# - phone: login code + optional 2fa password
+# - qr: QR login token flow
+
+[logging]
+# Error log file path. Relative paths resolve from repo root.
+error_log_file = "data/logs/app-error.log"
+# Log level for stdout. Supported: "error", "warn", "info", "debug", "trace".
+level = "warn"
