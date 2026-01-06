@@ -5,7 +5,7 @@ pub enum TelegramError {
     #[error("telegram invocation error: {0}")]
     Invocation(#[from] grammers_mtsender::InvocationError),
     #[error("sign in error: {0}")]
-    SignIn(#[from] grammers_client::SignInError),
+    SignIn(Box<grammers_client::SignInError>),
     #[error("sqlite session error: {0}")]
     Sqlite(#[from] sqlite::Error),
     #[error("io error: {0}")]
@@ -15,3 +15,9 @@ pub enum TelegramError {
 }
 
 pub type Result<T> = std::result::Result<T, TelegramError>;
+
+impl From<grammers_client::SignInError> for TelegramError {
+    fn from(err: grammers_client::SignInError) -> Self {
+        Self::SignIn(Box::new(err))
+    }
+}

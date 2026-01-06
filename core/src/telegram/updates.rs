@@ -114,9 +114,7 @@ pub fn spawn_telegram_update_pump(
 pub fn take_updates(
     updates: &mut Option<mpsc::UnboundedReceiver<UpdatesLike>>,
 ) -> Result<mpsc::UnboundedReceiver<UpdatesLike>> {
-    updates
-        .take()
-        .ok_or(TelegramError::UpdatePumpUnavailable)
+    updates.take().ok_or(TelegramError::UpdatePumpUnavailable)
 }
 
 #[cfg(test)]

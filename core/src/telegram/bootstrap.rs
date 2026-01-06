@@ -79,11 +79,7 @@ impl TelegramBootstrap {
         }
 
         let session = Arc::new(SqliteSession::open(&session_path)?);
-        let pool = SenderPool::with_configuration(
-            Arc::clone(&session),
-            api_id,
-            connection_params,
-        );
+        let pool = SenderPool::with_configuration(Arc::clone(&session), api_id, connection_params);
 
         let client = Client::with_configuration(
             &pool,
@@ -103,7 +99,7 @@ impl TelegramBootstrap {
             api_id,
             api_hash,
             qr_except_ids,
-            updates_config: updates_config,
+            updates_config,
         })
     }
 

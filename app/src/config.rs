@@ -157,8 +157,8 @@ fn load_file_config() -> Result<Option<FileConfig>, ConfigError> {
     if !resolved.exists() {
         return Ok(None);
     }
-    let contents =
-        std::fs::read_to_string(&resolved).map_err(|err| ConfigError::ConfigRead(err.to_string()))?;
+    let contents = std::fs::read_to_string(&resolved)
+        .map_err(|err| ConfigError::ConfigRead(err.to_string()))?;
     let config: FileConfig =
         toml::from_str(&contents).map_err(|err| ConfigError::ConfigRead(err.to_string()))?;
     Ok(Some(config))
@@ -169,8 +169,7 @@ fn resolve_path(raw: &str) -> Result<PathBuf, ConfigError> {
     if path.is_absolute() {
         return Ok(path);
     }
-    let base = std::env::current_dir()
-        .map_err(|err| ConfigError::CurrentDir(err.to_string()))?;
+    let base = std::env::current_dir().map_err(|err| ConfigError::CurrentDir(err.to_string()))?;
     Ok(base.join(path))
 }
 
@@ -345,11 +344,7 @@ mod tests {
 
         let temp_path = std::env::temp_dir().join("telegram-llm-tui-app-config.toml");
         let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(
-            &temp_path,
-            "[auth]\ndefault_method = \"qr\"\n",
-        )
-        .unwrap();
+        std::fs::write(&temp_path, "[auth]\ndefault_method = \"qr\"\n").unwrap();
 
         let result = AppConfig::from_env();
         let _ = std::fs::remove_file(&temp_path);

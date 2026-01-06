@@ -90,7 +90,10 @@ mod tests {
             cursor: 2,
         };
 
-        handle_key(&mut state, KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+        handle_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+        );
 
         assert_eq!(state.text, "o");
         assert_eq!(state.cursor, 1);

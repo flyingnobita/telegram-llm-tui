@@ -30,11 +30,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing(&config)?;
     info!("loaded configuration");
 
-    let telegram_config = TelegramConfig::new(
-        config.api_id,
-        config.api_hash,
-        config.session_path.clone(),
-    );
+    let telegram_config =
+        TelegramConfig::new(config.api_id, config.api_hash, config.session_path.clone());
 
     let mut bootstrap = TelegramBootstrap::connect(telegram_config).await?;
     let auth_flow = bootstrap.auth_flow();
@@ -91,9 +88,8 @@ fn init_tracing(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
         .append(true)
         .open(log_path)?;
 
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new(level_filter_directive(config.log_level))
-    });
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(level_filter_directive(config.log_level)));
     let stdout_layer = tracing_subscriber::fmt::layer().with_filter(filter);
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(std::sync::Mutex::new(file))

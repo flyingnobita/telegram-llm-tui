@@ -1,8 +1,4 @@
-use ratatui::{
-    backend::TestBackend,
-    buffer::Buffer,
-    Terminal,
-};
+use ratatui::{backend::TestBackend, buffer::Buffer, Terminal};
 
 use crate::view::{draw, UiState};
 

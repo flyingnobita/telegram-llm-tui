@@ -26,8 +26,8 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::BOTTOM));
 
-    let body = Paragraph::new("Messages")
-        .block(Block::default().title("Chat").borders(Borders::ALL));
+    let body =
+        Paragraph::new("Messages").block(Block::default().title("Chat").borders(Borders::ALL));
 
     let composer = Paragraph::new(state.input.text.as_str())
         .block(Block::default().title("Composer").borders(Borders::ALL));

@@ -61,8 +61,7 @@ pub trait AuthClient: Send + Sync {
         api_hash: &str,
         except_ids: &[i64],
     ) -> Result<QrLoginResult>;
-    async fn import_login_token(&self, token: &[u8], dc_id: Option<i32>)
-        -> Result<QrLoginResult>;
+    async fn import_login_token(&self, token: &[u8], dc_id: Option<i32>) -> Result<QrLoginResult>;
 }
 
 pub struct AuthFlow<C: AuthClient> {
@@ -138,9 +137,7 @@ impl GrammersAuthClient {
     ) -> Result<AuthResult<PasswordToken>> {
         match result {
             Ok(_) => Ok(AuthResult::Authorized),
-            Err(SignInError::PasswordRequired(token)) => {
-                Ok(AuthResult::PasswordRequired(token))
-            }
+            Err(SignInError::PasswordRequired(token)) => Ok(AuthResult::PasswordRequired(token)),
             Err(SignInError::InvalidCode) => Ok(AuthResult::InvalidCode),
             Err(SignInError::InvalidPassword) => Ok(AuthResult::InvalidPassword),
             Err(SignInError::SignUpRequired { .. }) => Ok(AuthResult::SignUpRequired),
@@ -209,11 +206,7 @@ impl AuthClient for GrammersAuthClient {
         Ok(Self::map_login_token_result(result))
     }
 
-    async fn import_login_token(
-        &self,
-        token: &[u8],
-        dc_id: Option<i32>,
-    ) -> Result<QrLoginResult> {
+    async fn import_login_token(&self, token: &[u8], dc_id: Option<i32>) -> Result<QrLoginResult> {
         let request = tl::functions::auth::ImportLoginToken {
             token: token.to_vec(),
         };
