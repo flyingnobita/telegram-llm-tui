@@ -22,3 +22,10 @@ OS-specific dirs later.
 
 - Must ensure local data is excluded from git.
 - We will switch to OS-specific paths later (XDG/AppData/macOS).
+
+## Logging
+
+- Error log file: `data/logs/app-error.log` (configured in
+  `app/config/app.toml` under `[logging].error_log_file`).
+- Log level: configured in `app/config/app.toml` under `[logging].level`
+  (default `info`).

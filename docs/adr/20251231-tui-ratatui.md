@@ -22,3 +22,10 @@ Use `ratatui` as the TUI framework.
 
 - UI components will follow ratatui's widget model.
 - Alternatives (cursive) are deferred for now.
+
+## Logging
+
+- Error log file: `data/logs/app-error.log` (configured in
+  `app/config/app.toml` under `[logging].error_log_file`).
+- Log level: configured in `app/config/app.toml` under `[logging].level`
+  (default `info`).

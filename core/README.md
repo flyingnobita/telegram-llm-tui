@@ -9,7 +9,11 @@ This crate owns the Telegram client and domain logic.
 
 ## Native dependencies
 
-None as of 2026-01-05.
+- sqlite3 (via `grammers-session` `SqliteSession` and `sqlite3-src`)
+  - why: persist Telegram session/auth keys
+  - introduced by: `core` Telegram bootstrap
+  - install: macOS needs Xcode Command Line Tools; Linux needs build-essential;
+    Windows needs MSVC build tools
 
 If a future change adds native dependencies (for example: OpenSSL, libsodium,
 sqlite),
@@ -23,3 +27,10 @@ record them here with:
 
 - UI snapshot tests (workspace): `INSTA_UPDATE=always mise exec -- cargo test -p
   ui`
+
+## Logging
+
+- Error log file: `data/logs/app-error.log` (configured in
+  `app/config/app.toml` under `[logging].error_log_file`).
+- Log level: configured in `app/config/app.toml` under `[logging].level`
+  (default `info`).

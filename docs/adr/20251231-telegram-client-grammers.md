@@ -24,3 +24,10 @@ Use `grammers` as the Telegram client library for the initial implementation.
   library.
 - Future migration to another client library remains possible but would require
   refactoring.
+
+## Logging
+
+- Error log file: `data/logs/app-error.log` (configured in
+  `app/config/app.toml` under `[logging].error_log_file`).
+- Log level: configured in `app/config/app.toml` under `[logging].level`
+  (default `info`).

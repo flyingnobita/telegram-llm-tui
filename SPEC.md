@@ -58,6 +58,10 @@ Trade-offs, risks, follow-ups.
 - Respect Telegram rate limits; never block the UI thread.
 - Safe handling of secrets (no accidental logs; opt-in prompt logs).
 - Works on macOS first; Linux/Windows follow-up.
+- Error log file: `data/logs/app-error.log` (configured in
+  `app/config/app.toml` under `[logging].error_log_file`).
+- Log level: configured in `app/config/app.toml` under `[logging].level`
+  (default `info`).
 
 ### Acceptance criteria (MVP)
 

@@ -29,7 +29,7 @@
 
 ## 2) Telegram core
 
-1. [ ] Implement client bootstrap (grammers session config, auth flow, phone/QR
+1. [x] Implement client bootstrap (grammers session config, auth flow, phone/QR
    login) and update pump (background async task).
 2. [ ] Model domain events (new message, edited, read receipt, typing) and
    expose as channels/streams to the UI layer.
@@ -102,3 +102,10 @@
    binary release (macOS first).
 5. [ ] M4 (week 7+): polish, packaging, docs, optional plugins (filters,
    rules, extra providers).
+
+## Logging
+
+- Error log file: `data/logs/app-error.log` (configured in
+  `app/config/app.toml` under `[logging].error_log_file`).
+- Log level: configured in `app/config/app.toml` under `[logging].level`
+  (default `info`).

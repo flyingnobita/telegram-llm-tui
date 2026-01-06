@@ -28,3 +28,10 @@ remains LLM-friendly for automation.
 - Adds snapshot review/update workflow (e.g., `INSTA_UPDATE=always`).
 - Requires deterministic test data and stable widget layouts.
 - Some end-to-end terminal behaviors will still need manual verification.
+
+## Logging
+
+- Error log file: `data/logs/app-error.log` (configured in
+  `app/config/app.toml` under `[logging].error_log_file`).
+- Log level: configured in `app/config/app.toml` under `[logging].level`
+  (default `info`).
