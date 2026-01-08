@@ -6,7 +6,7 @@ tooling, and documentation consistent until the codebase is scaffolded.
 ## Project Structure & Module Organization
 
 - Planning and requirements live at the root: `PLANS.md` (execution plan) and
-  `SPEC.md` (requirements + ADR policy).
+  `SPECS.md` (requirements + ADR policy).
 - Architecture decisions are recorded as ADRs in `docs/adr/` with the naming
   pattern `YYYYMMDD-short-title.md`.
 - Planned Rust workspace layout (per `PLANS.md`): `app/` (binary), `core/`
@@ -20,14 +20,6 @@ tooling, and documentation consistent until the codebase is scaffolded.
 - Data directory: project-local for dev-only; OS-specific dirs planned for
   production.
 - LLM auth: local `.env` for dev-only; production secret store planned.
-
-## Planning Workflow
-
-- `PLANS.md` bullets are checklist items; use `- [ ]` and `- [x]` to track
-  completion.
-- When any `*.md` file changes, review other docs for consistency and update
-  them as needed; if a related update could be conflicting or unexpected,
-  notify before making that change.
 
 ## Build, Test, and Development Commands
 
@@ -60,16 +52,19 @@ Tool versions are managed via mise-en-place.
 - No Git history exists yet, so no established commit message convention. Agree
   on a standard before first commits (e.g., Conventional Commits).
 - PRs should include: a short summary, linked issues (if any), and updates to
-  `PLANS.md`, `SPEC.md`, or `docs/adr/*` when decisions change.
+  `PLANS.md`, `SPECS.md`, or `docs/adr/*` when decisions change.
 
 ## Decision Records (ADRs)
 
 - Create an ADR as soon as a decision is made.
 - Reference the relevant ADR in PR descriptions and planning updates.
 
+## Configs
+
+- config file location: `app/config/app.toml`
+
 ## Logging
 
 - Error log file: `data/logs/app-error.log` (configured in
-  `app/config/app.toml` under `[logging].error_log_file`).
-- Log level: configured in `app/config/app.toml` under `[logging].level`
-  (default `info`).
+  config file under `[logging].error_log_file`).
+- Log level: configured in config file under `[logging].level`

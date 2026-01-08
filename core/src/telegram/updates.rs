@@ -48,14 +48,20 @@ impl UpdateSource for GrammersUpdateSource {
 }
 
 pub struct UpdatePump<U, E> {
-    receiver: mpsc::Receiver<UpdateEvent<U, E>>,
+    receiver: Option<mpsc::Receiver<UpdateEvent<U, E>>>,
     stop_tx: watch::Sender<bool>,
     join: JoinHandle<()>,
 }
 
 impl<U, E> UpdatePump<U, E> {
     pub fn receiver(&mut self) -> &mut mpsc::Receiver<UpdateEvent<U, E>> {
-        &mut self.receiver
+        self.receiver
+            .as_mut()
+            .expect("update pump receiver already taken")
+    }
+
+    pub fn take_receiver(&mut self) -> Option<mpsc::Receiver<UpdateEvent<U, E>>> {
+        self.receiver.take()
     }
 
     pub async fn stop(self) {
@@ -95,7 +101,7 @@ where
     });
 
     UpdatePump {
-        receiver: rx,
+        receiver: Some(rx),
         stop_tx,
         join,
     }

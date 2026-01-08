@@ -7,6 +7,10 @@ default_method = "phone"
 # - phone: login code + optional 2fa password
 # - qr: QR login token flow
 
+[telegram]
+# Update pump buffer size (number of events).
+update_buffer = 1024
+
 [logging]
 # Primary app log file path. Relative paths resolve from repo root.
 log_file = "data/logs/app.log"
