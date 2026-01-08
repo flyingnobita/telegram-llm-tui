@@ -21,23 +21,23 @@ including sub-feature ordering where applicable.
 6. [x] Logging policy: plain logs, size-based rotation, and content logging
    defaults. See `docs/adr/20260106-logging-policy.md`.
 
-## 1) Project scaffold
+**## 1) Project scaffold
 
 **Prerequisites:** Early decisions complete. **Sub-feature ordering:** Workspace
 → tooling/version management → CI/toolchain → integration constraints → TUI test
 harness.
 
-1. [ ] Create Cargo workspace with crates: `app` (bin, wiring), `core` (Telegram
+1. [x] Create Cargo workspace with crates: `app` (bin, wiring), `core` (Telegram
    + domain), `ui` (TUI components), `llm` (providers, prompt templates),
    `integration-tests`.
-2. [ ] Use mise-en-place to manage tool versions (Rust toolchain, build deps,
+2. [x] Use mise-en-place to manage tool versions (Rust toolchain, build deps,
    CLI helpers).
-3. [ ] Add CI basics: `cargo fmt -- --check`, `clippy -D warnings`, `nextest`.
+3. [x] Add CI basics: `cargo fmt -- --check`, `clippy -D warnings`, `nextest`.
    Set Rust toolchain in `rust-toolchain.toml`.
-4. [ ] Keep Telegram integration grammers-only (MTProto) and document any native
+4. [x] Keep Telegram integration grammers-only (MTProto) and document any native
    deps if they appear.
-5. [ ] Set up a TUI test harness (headless render/snapshot) and seed unit tests
-   for UI input/behavior.
+5. [x] Set up a TUI test harness (headless render/snapshot) and seed unit tests
+   for UI input/behavior.**
 
 ## 2) Telegram core
 
