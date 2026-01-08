@@ -1,5 +1,6 @@
 mod config;
 mod prompt;
+mod ui_state;
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -21,6 +22,7 @@ use tracing_subscriber::Layer;
 
 use crate::config::{AppConfig, LogFormat, LogRotation};
 use crate::prompt::{prompt_line, prompt_secret, AuthMethod};
+use crate::ui_state::UiCacheBridge;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -38,6 +40,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cache_store = Arc::new(SqliteCacheStore::new(config.cache_db_path.clone()));
     let cache_manager = CacheManager::spawn(cache_store, config.cache_config()).await?;
+    let mut ui_bridge = UiCacheBridge::new(None);
+    ui_bridge.refresh(&cache_manager);
 
     let mut telegram_config = TelegramConfig::new(
         config.api_id,
@@ -73,6 +77,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
                 match event_rx.recv().await {
                     Ok(event) => {
                         cache_manager.apply_event(&event);
+                        ui_bridge.refresh(&cache_manager);
                         info!(?event, "received domain event");
                     }
                     Err(RecvError::Lagged(_)) => {
