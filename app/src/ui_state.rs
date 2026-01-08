@@ -38,6 +38,7 @@ impl UiCacheBridge {
             }
             None => Vec::new(),
         };
+        self.state.message_view.reconcile(&self.state.messages);
 
         selected_chat
     }
@@ -64,6 +65,7 @@ fn map_chat_summaries(
     let items = sorted
         .iter()
         .map(|chat| ChatListItem {
+            id: chat.chat_id.0,
             title: chat_title(chat),
             unread: chat.unread_count.unwrap_or(0),
             is_selected: resolved_selection == Some(chat.chat_id),
@@ -86,6 +88,7 @@ fn map_messages(mut messages: Vec<CachedMessage>) -> Vec<MessageItem> {
     messages
         .into_iter()
         .map(|message| MessageItem {
+            id: message.message_id.0,
             author: message_author_label(&message),
             timestamp: format_timestamp(message.timestamp),
             body: message.text,
@@ -191,6 +194,7 @@ mod tests {
 
         assert_eq!(selected, Some(ChatId(2)));
         assert_eq!(bridge.state.chats.len(), 2);
+        assert_eq!(bridge.state.chats[0].id, 2);
         assert!(bridge.state.chats[0].is_selected);
         assert_eq!(bridge.state.chats[0].title, "Product");
 
@@ -215,8 +219,10 @@ mod tests {
         bridge.refresh(&manager);
 
         assert_eq!(bridge.state.messages.len(), 2);
+        assert_eq!(bridge.state.messages[0].id, 1);
         assert_eq!(bridge.state.messages[0].author, "You");
         assert_eq!(bridge.state.messages[0].timestamp, "00:01");
+        assert_eq!(bridge.state.messages[1].id, 2);
         assert_eq!(bridge.state.messages[1].author, "User 42");
         assert_eq!(bridge.state.messages[1].timestamp, "00:02");
 

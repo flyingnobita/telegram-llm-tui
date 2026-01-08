@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -9,6 +11,7 @@ use crate::input::InputState;
 
 #[derive(Debug, Clone)]
 pub struct ChatListItem {
+    pub id: i64,
     pub title: String,
     pub unread: u32,
     pub is_selected: bool,
@@ -16,9 +19,122 @@ pub struct ChatListItem {
 
 #[derive(Debug, Clone)]
 pub struct MessageItem {
+    pub id: i64,
     pub author: String,
     pub timestamp: String,
     pub body: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UiFocus {
+    Chats,
+    #[default]
+    Messages,
+    Composer,
+    Search,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MessageSearchState {
+    pub is_open: bool,
+    pub query: InputState,
+    pub matches: Vec<usize>,
+    pub selected: usize,
+}
+
+impl MessageSearchState {
+    pub fn recompute_matches(&mut self, messages: &[MessageItem]) {
+        let query = self.query.text.trim();
+        if query.is_empty() {
+            self.matches.clear();
+            self.selected = 0;
+            return;
+        }
+        let needle = query.to_lowercase();
+        self.matches = messages
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, message)| {
+                let haystack = format!("{} {}", message.author, message.body).to_lowercase();
+                if haystack.contains(&needle) {
+                    Some(idx)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if self.matches.is_empty() || self.selected >= self.matches.len() {
+            self.selected = 0;
+        }
+    }
+
+    pub fn selected_match(&self) -> Option<usize> {
+        self.matches.get(self.selected).copied()
+    }
+
+    pub fn advance(&mut self, forward: bool) -> Option<usize> {
+        if self.matches.is_empty() {
+            return None;
+        }
+        if forward {
+            self.selected = (self.selected + 1) % self.matches.len();
+        } else if self.selected == 0 {
+            self.selected = self.matches.len() - 1;
+        } else {
+            self.selected -= 1;
+        }
+        self.matches.get(self.selected).copied()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageViewState {
+    pub scroll_offset: usize,
+    pub cursor: Option<usize>,
+    pub selected_ids: BTreeSet<i64>,
+    pub search: MessageSearchState,
+    pub page_size: usize,
+}
+
+impl Default for MessageViewState {
+    fn default() -> Self {
+        Self {
+            scroll_offset: 0,
+            cursor: None,
+            selected_ids: BTreeSet::new(),
+            search: MessageSearchState::default(),
+            page_size: 8,
+        }
+    }
+}
+
+impl MessageViewState {
+    pub fn reconcile(&mut self, messages: &[MessageItem]) {
+        let existing_ids: BTreeSet<i64> = messages.iter().map(|message| message.id).collect();
+        self.selected_ids.retain(|id| existing_ids.contains(id));
+
+        if messages.is_empty() {
+            self.cursor = None;
+            self.scroll_offset = 0;
+        } else {
+            let max_index = messages.len().saturating_sub(1);
+            self.cursor = Some(self.cursor.unwrap_or(max_index).min(max_index));
+            self.scroll_offset = self.scroll_offset.min(max_index);
+        }
+
+        self.search.recompute_matches(messages);
+    }
+
+    pub fn toggle_selection(&mut self, message_id: i64) {
+        if !self.selected_ids.insert(message_id) {
+            self.selected_ids.remove(&message_id);
+        }
+    }
+
+    pub fn cursor_message_id(&self, messages: &[MessageItem]) -> Option<i64> {
+        self.cursor
+            .and_then(|index| messages.get(index).map(|message| message.id))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -48,9 +164,11 @@ pub struct CommandPaletteState {
 
 #[derive(Debug, Clone, Default)]
 pub struct UiState {
+    pub focus: UiFocus,
     pub input: InputState,
     pub chats: Vec<ChatListItem>,
     pub messages: Vec<MessageItem>,
+    pub message_view: MessageViewState,
     pub draft_modal: DraftModalState,
     pub command_palette: CommandPaletteState,
 }
@@ -92,27 +210,13 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
         .block(Block::default().title("Chats").borders(Borders::ALL))
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
-    let message_text = if state.messages.is_empty() {
-        "No messages".to_string()
-    } else {
-        state
-            .messages
-            .iter()
-            .map(|message| {
-                let prefix = if message.timestamp.is_empty() {
-                    String::new()
-                } else {
-                    format!("[{}] ", message.timestamp)
-                };
-                format!("{}{}: {}", prefix, message.author, message.body)
-            })
-            .collect::<Vec<String>>()
-            .join("\n")
-    };
+    let (message_text, scroll_offset) = build_message_text(state);
+    let message_title = message_view_title(state);
 
     let message_view = Paragraph::new(message_text)
         .wrap(Wrap { trim: true })
-        .block(Block::default().title("Messages").borders(Borders::ALL));
+        .scroll((scroll_offset, 0))
+        .block(Block::default().title(message_title).borders(Borders::ALL));
 
     let composer = Paragraph::new(state.input.text.as_str())
         .block(Block::default().title("Composer").borders(Borders::ALL));
@@ -128,6 +232,73 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
     if state.command_palette.is_open {
         draw_command_palette(frame, state, area);
     }
+}
+
+fn message_view_title(state: &UiState) -> String {
+    if state.message_view.search.is_open || !state.message_view.search.query.text.is_empty() {
+        if state.message_view.search.query.text.is_empty() {
+            "Messages (search)".to_string()
+        } else {
+            format!(
+                "Messages (search: {})",
+                state.message_view.search.query.text
+            )
+        }
+    } else {
+        "Messages".to_string()
+    }
+}
+
+fn build_message_text(state: &UiState) -> (String, u16) {
+    if state.messages.is_empty() {
+        return ("No messages".to_string(), 0);
+    }
+
+    let search_matches = &state.message_view.search.matches;
+    let lines: Vec<String> = state
+        .messages
+        .iter()
+        .enumerate()
+        .map(|(idx, message)| {
+            let cursor_marker = if state.message_view.cursor == Some(idx) {
+                ">"
+            } else {
+                " "
+            };
+            let selected_marker = if state.message_view.selected_ids.contains(&message.id) {
+                "x"
+            } else {
+                " "
+            };
+            let match_marker = if search_matches.contains(&idx) {
+                "*"
+            } else {
+                " "
+            };
+            let timestamp = if message.timestamp.is_empty() {
+                String::new()
+            } else {
+                format!("[{}] ", message.timestamp)
+            };
+            format!(
+                "{} [{}{}] {}{}: {}",
+                cursor_marker,
+                selected_marker,
+                match_marker,
+                timestamp,
+                message.author,
+                message.body
+            )
+        })
+        .collect();
+
+    let scroll_offset = state
+        .message_view
+        .scroll_offset
+        .min(lines.len().saturating_sub(1))
+        .min(u16::MAX as usize) as u16;
+
+    (lines.join("\n"), scroll_offset)
 }
 
 fn draw_draft_modal(frame: &mut Frame, state: &UiState, area: Rect) {
