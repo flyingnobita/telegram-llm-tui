@@ -356,21 +356,23 @@ mod tests {
     use crate::view::{ChatListItem, MessageItem};
 
     fn sample_state() -> UiState {
-        let mut state = UiState::default();
-        state.messages = vec![
-            MessageItem {
-                id: 1,
-                author: "Ada".to_string(),
-                timestamp: "09:10".to_string(),
-                body: "hello".to_string(),
-            },
-            MessageItem {
-                id: 2,
-                author: "You".to_string(),
-                timestamp: "09:11".to_string(),
-                body: "reply".to_string(),
-            },
-        ];
+        let mut state = UiState {
+            messages: vec![
+                MessageItem {
+                    id: 1,
+                    author: "Ada".to_string(),
+                    timestamp: "09:10".to_string(),
+                    body: "hello".to_string(),
+                },
+                MessageItem {
+                    id: 2,
+                    author: "You".to_string(),
+                    timestamp: "09:11".to_string(),
+                    body: "reply".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
         state.message_view.reconcile(&state.messages);
         state
     }
@@ -462,22 +464,24 @@ mod tests {
 
     #[test]
     fn chat_selection_moves_with_keys() {
-        let mut state = UiState::default();
-        state.focus = UiFocus::Chats;
-        state.chats = vec![
-            ChatListItem {
-                id: 10,
-                title: "General".to_string(),
-                unread: 0,
-                is_selected: true,
-            },
-            ChatListItem {
-                id: 11,
-                title: "Design".to_string(),
-                unread: 1,
-                is_selected: false,
-            },
-        ];
+        let mut state = UiState {
+            focus: UiFocus::Chats,
+            chats: vec![
+                ChatListItem {
+                    id: 10,
+                    title: "General".to_string(),
+                    unread: 0,
+                    is_selected: true,
+                },
+                ChatListItem {
+                    id: 11,
+                    title: "Design".to_string(),
+                    unread: 1,
+                    is_selected: false,
+                },
+            ],
+            ..Default::default()
+        };
 
         handle_ui_key(
             &mut state,
