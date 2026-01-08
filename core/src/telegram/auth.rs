@@ -135,30 +135,55 @@ impl GrammersAuthClient {
         &self,
         result: std::result::Result<grammers_client::types::User, SignInError>,
     ) -> Result<AuthResult<PasswordToken>> {
-        match result {
-            Ok(_) => Ok(AuthResult::Authorized),
-            Err(SignInError::PasswordRequired(token)) => Ok(AuthResult::PasswordRequired(token)),
-            Err(SignInError::InvalidCode) => Ok(AuthResult::InvalidCode),
-            Err(SignInError::InvalidPassword) => Ok(AuthResult::InvalidPassword),
-            Err(SignInError::SignUpRequired { .. }) => Ok(AuthResult::SignUpRequired),
-            Err(SignInError::Other(err)) => Err(err.into()),
-        }
+        map_sign_in_result(result)
     }
 
     fn map_login_token_result(result: tl::enums::auth::LoginToken) -> QrLoginResult {
-        match result {
-            tl::enums::auth::LoginToken::Token(token) => QrLoginResult::Pending(QrLogin {
-                token: token.token,
-                expires: Some(token.expires),
-                dc_id: None,
-            }),
-            tl::enums::auth::LoginToken::MigrateTo(token) => QrLoginResult::Pending(QrLogin {
-                token: token.token,
-                expires: None,
-                dc_id: Some(token.dc_id),
-            }),
-            tl::enums::auth::LoginToken::Success(_) => QrLoginResult::Authorized,
-        }
+        map_login_token_result(result)
+    }
+}
+
+fn map_sign_in_result(
+    result: std::result::Result<grammers_client::types::User, SignInError>,
+) -> Result<AuthResult<PasswordToken>> {
+    match result {
+        Ok(_) => Ok(AuthResult::Authorized),
+        Err(SignInError::PasswordRequired(token)) => Ok(AuthResult::PasswordRequired(token)),
+        Err(SignInError::InvalidCode) => Ok(AuthResult::InvalidCode),
+        Err(SignInError::InvalidPassword) => Ok(AuthResult::InvalidPassword),
+        Err(SignInError::SignUpRequired { .. }) => Ok(AuthResult::SignUpRequired),
+        Err(SignInError::Other(err)) => Err(err.into()),
+    }
+}
+
+fn map_login_token_result(result: tl::enums::auth::LoginToken) -> QrLoginResult {
+    match result {
+        tl::enums::auth::LoginToken::Token(token) => QrLoginResult::Pending(QrLogin {
+            token: token.token,
+            expires: Some(token.expires),
+            dc_id: None,
+        }),
+        tl::enums::auth::LoginToken::MigrateTo(token) => QrLoginResult::Pending(QrLogin {
+            token: token.token,
+            expires: None,
+            dc_id: Some(token.dc_id),
+        }),
+        tl::enums::auth::LoginToken::Success(_) => QrLoginResult::Authorized,
+    }
+}
+
+#[cfg(feature = "test-support")]
+pub mod test_support {
+    use super::*;
+
+    pub fn map_sign_in_result(
+        result: std::result::Result<grammers_client::types::User, SignInError>,
+    ) -> Result<AuthResult<PasswordToken>> {
+        super::map_sign_in_result(result)
+    }
+
+    pub fn map_login_token_result(result: tl::enums::auth::LoginToken) -> QrLoginResult {
+        super::map_login_token_result(result)
     }
 }
 
