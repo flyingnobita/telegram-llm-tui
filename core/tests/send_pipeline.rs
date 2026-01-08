@@ -129,14 +129,8 @@ async fn retries_on_rate_limit_then_succeeds() {
 
 #[tokio::test(start_paused = true)]
 async fn fails_after_max_retry_attempts() {
-    let error_one = SendError::Invocation(InvocationError::Io(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        "boom",
-    )));
-    let error_two = SendError::Invocation(InvocationError::Io(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        "boom",
-    )));
+    let error_one = SendError::Invocation(InvocationError::Io(std::io::Error::other("boom")));
+    let error_two = SendError::Invocation(InvocationError::Io(std::io::Error::other("boom")));
     let responses = vec![Err(error_one), Err(error_two)];
     let transport = MockTransport::new(responses);
     let config = SendPipelineConfig {
