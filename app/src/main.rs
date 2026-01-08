@@ -10,6 +10,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use telegram_llm_core::telegram::{AuthResult, QrLoginResult, TelegramBootstrap, TelegramConfig};
 use time::{format_description, UtcOffset};
+use tokio::sync::broadcast::error::RecvError;
 use tracing::{info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -53,20 +54,21 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         info!("already authorized");
     }
 
-    info!("starting update pump");
-    let mut pump = bootstrap.spawn_update_pump(config.update_buffer)?;
+    info!("starting domain event stream");
+    let event_stream = bootstrap.spawn_event_stream(config.update_buffer)?;
+    let mut event_rx = event_stream.subscribe();
 
     tokio::select! {
         _ = async {
-            while let Some(event) = pump.receiver().recv().await {
-                match event {
-                    telegram_llm_core::telegram::UpdateEvent::Update(update) => {
-                        info!(?update, "received update");
+            loop {
+                match event_rx.recv().await {
+                    Ok(event) => {
+                        info!(?event, "received domain event");
                     }
-                    telegram_llm_core::telegram::UpdateEvent::Error(err) => {
-                        warn!(error = %err, "update pump error");
-                        break;
+                    Err(RecvError::Lagged(_)) => {
+                        continue;
                     }
+                    Err(RecvError::Closed) => break,
                 }
             }
         } => {}
@@ -75,7 +77,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    pump.stop().await;
+    event_stream.stop().await;
     bootstrap.shutdown().await;
     info!("shutdown complete");
     Ok(())
