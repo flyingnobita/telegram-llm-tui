@@ -663,6 +663,12 @@ dependencies = [
 [[package]]
 name = "integration_tests"
 version = "0.1.0"
+dependencies = [
+ "grammers-client",
+ "grammers-mtsender",
+ "grammers-tl-types",
+ "telegram_llm_core",
+]
 
 [[package]]
 name = "itertools"

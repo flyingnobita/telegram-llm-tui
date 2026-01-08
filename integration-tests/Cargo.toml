@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+telegram_llm_core = { path = "../core", features = ["test-support"] }
+grammers-client = "0.8.1"
+grammers-mtsender = "0.8.1"
+grammers-tl-types = "0.8.0"
