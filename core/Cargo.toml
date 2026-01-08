@@ -3,6 +3,9 @@ name = "telegram_llm_core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+test-support = []
+
 [dependencies]
 async-trait = "0.1"
 grammers-client = "0.8.1"
