@@ -10,12 +10,33 @@ use tokio::task::JoinHandle;
 
 use crate::telegram::auth::{AuthFlow, GrammersAuthClient};
 use crate::telegram::error::Result;
+use crate::telegram::events::{spawn_domain_event_pump, EventStream};
 use crate::telegram::updates::{spawn_telegram_update_pump, take_updates, UpdatePump};
 
 #[derive(Debug, Clone)]
 pub struct UpdatesConfig {
     pub catch_up: bool,
     pub update_queue_limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventDropPolicy {
+    DropOldest,
+}
+
+#[derive(Debug, Clone)]
+pub struct EventStreamConfig {
+    pub buffer_size: usize,
+    pub drop_policy: EventDropPolicy,
+}
+
+impl Default for EventStreamConfig {
+    fn default() -> Self {
+        Self {
+            buffer_size: 1024,
+            drop_policy: EventDropPolicy::DropOldest,
+        }
+    }
 }
 
 impl Default for UpdatesConfig {
@@ -32,6 +53,7 @@ pub struct TelegramConfig {
     pub api_hash: String,
     pub session_path: PathBuf,
     pub updates: UpdatesConfig,
+    pub event_stream: EventStreamConfig,
     pub flood_sleep_threshold: u32,
     pub connection_params: ConnectionParams,
     pub qr_except_ids: Vec<i64>,
@@ -44,6 +66,7 @@ impl TelegramConfig {
             api_hash: api_hash.into(),
             session_path: session_path.into(),
             updates: UpdatesConfig::default(),
+            event_stream: EventStreamConfig::default(),
             flood_sleep_threshold: 60,
             connection_params: ConnectionParams::default(),
             qr_except_ids: Vec::new(),
@@ -60,6 +83,7 @@ pub struct TelegramBootstrap {
     api_hash: String,
     qr_except_ids: Vec<i64>,
     updates_config: UpdatesConfig,
+    event_stream_config: EventStreamConfig,
 }
 
 impl TelegramBootstrap {
@@ -69,6 +93,7 @@ impl TelegramBootstrap {
             api_hash,
             session_path,
             updates: updates_config,
+            event_stream: event_stream_config,
             flood_sleep_threshold,
             connection_params,
             qr_except_ids,
@@ -100,6 +125,7 @@ impl TelegramBootstrap {
             api_hash,
             qr_except_ids,
             updates_config,
+            event_stream_config,
         })
     }
 
@@ -127,6 +153,11 @@ impl TelegramBootstrap {
             self.updates_config.clone().into(),
             buffer,
         ))
+    }
+
+    pub fn spawn_event_stream(&mut self, update_buffer: usize) -> Result<EventStream> {
+        let update_pump = self.spawn_update_pump(update_buffer)?;
+        spawn_domain_event_pump(update_pump, self.event_stream_config.buffer_size)
     }
 
     pub async fn shutdown(self) {

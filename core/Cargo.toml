@@ -12,3 +12,4 @@ grammers-tl-types = "0.8.0"
 sqlite = "0.37.0"
 thiserror = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tracing = "0.1"
