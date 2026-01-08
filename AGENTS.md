@@ -59,9 +59,12 @@ Tool versions are managed via mise-en-place.
 - Create an ADR as soon as a decision is made.
 - Reference the relevant ADR in PR descriptions and planning updates.
 
+## Configs
+
+- config file location: `app/config/app.toml`
+
 ## Logging
 
 - Error log file: `data/logs/app-error.log` (configured in
-  `app/config/app.toml` under `[logging].error_log_file`).
-- Log level: configured in `app/config/app.toml` under `[logging].level`
-  (default `info`).
+  config file under `[logging].error_log_file`).
+- Log level: configured in config file under `[logging].level`
