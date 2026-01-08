@@ -42,14 +42,86 @@ pub fn render_to_string(state: &UiState, size: (u16, u16)) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::view::{ChatListItem, CommandPaletteState, DraftModalState, MessageItem};
     use insta::assert_snapshot;
 
-    #[test]
-    fn renders_basic_layout() {
+    fn sample_state() -> UiState {
         let mut state = UiState::default();
-        state.input.text = "hello world".to_string();
+        state.input.text = "drafting a reply".to_string();
+        state.chats = vec![
+            ChatListItem {
+                title: "General".to_string(),
+                unread: 0,
+                is_selected: true,
+            },
+            ChatListItem {
+                title: "Product".to_string(),
+                unread: 3,
+                is_selected: false,
+            },
+            ChatListItem {
+                title: "Design".to_string(),
+                unread: 1,
+                is_selected: false,
+            },
+        ];
+        state.messages = vec![
+            MessageItem {
+                author: "Ada".to_string(),
+                timestamp: "09:12".to_string(),
+                body: "Morning team".to_string(),
+            },
+            MessageItem {
+                author: "You".to_string(),
+                timestamp: "09:13".to_string(),
+                body: "Morning, syncing on layout".to_string(),
+            },
+            MessageItem {
+                author: "Ada".to_string(),
+                timestamp: "09:15".to_string(),
+                body: "Need the LLM draft soon".to_string(),
+            },
+        ];
+        state
+    }
 
-        let rendered = render_to_string(&state, (40, 10));
+    #[test]
+    fn renders_layout_v1() {
+        let state = sample_state();
+        let rendered = render_to_string(&state, (80, 20));
+
+        assert_snapshot!(rendered);
+    }
+
+    #[test]
+    fn renders_command_palette() {
+        let mut state = sample_state();
+        state.command_palette = CommandPaletteState {
+            is_open: true,
+            query: "open".to_string(),
+            items: vec![
+                "Open chat".to_string(),
+                "Open settings".to_string(),
+                "Open logs".to_string(),
+            ],
+            selected: 1,
+        };
+
+        let rendered = render_to_string(&state, (80, 20));
+
+        assert_snapshot!(rendered);
+    }
+
+    #[test]
+    fn renders_draft_modal() {
+        let mut state = sample_state();
+        state.draft_modal = DraftModalState {
+            is_open: true,
+            title: "LLM Draft".to_string(),
+            body: "Here is a draft response that needs review.".to_string(),
+        };
+
+        let rendered = render_to_string(&state, (80, 20));
 
         assert_snapshot!(rendered);
     }

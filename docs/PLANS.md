@@ -62,7 +62,7 @@ persistence.
 data). **Sub-feature ordering:** Layout -> input ergonomics -> accessibility ->
 notifications.
 
-1. [ ] (3.1) Layout v1: left chat list, main message view, bottom composer;
+1. [x] (3.1) Layout v1: left chat list, main message view, bottom composer;
    modal for LLM-generated drafts; command palette for actions.
 2. [ ] (3.2) Input ergonomics: vim or VSCode-style keymaps, scrollback,
    search in chat, message selection for LLM export.
