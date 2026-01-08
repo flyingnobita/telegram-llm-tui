@@ -7,7 +7,7 @@ use tracing_subscriber::filter::LevelFilter;
 use crate::prompt::AuthMethod;
 
 const DEFAULT_SESSION_PATH: &str = "data/telegram.session";
-const DEFAULT_UPDATE_BUFFER: usize = 100;
+const DEFAULT_UPDATE_BUFFER: usize = 1024;
 const DEFAULT_AUTH_METHOD: AuthMethod = AuthMethod::Phone;
 const DEFAULT_CONFIG_PATH: &str = "app/config/app.toml";
 const DEFAULT_LOG_FILE_PATH: &str = "data/logs/app.log";
@@ -69,11 +69,17 @@ pub enum ConfigError {
 struct FileConfig {
     auth: Option<AuthSection>,
     logging: Option<LoggingSection>,
+    telegram: Option<TelegramSection>,
 }
 
 #[derive(Debug, Deserialize)]
 struct AuthSection {
     default_method: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TelegramSection {
+    update_buffer: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,7 +130,11 @@ impl AppConfig {
             Ok(raw) => raw
                 .parse::<usize>()
                 .map_err(|_| ConfigError::InvalidUpdateBuffer(raw))?,
-            Err(_) => DEFAULT_UPDATE_BUFFER,
+            Err(_) => file_config
+                .as_ref()
+                .and_then(|config| config.telegram.as_ref())
+                .and_then(|telegram| telegram.update_buffer)
+                .unwrap_or(DEFAULT_UPDATE_BUFFER),
         };
 
         let phone_number = std::env::var("TELEGRAM_PHONE_NUMBER")
@@ -419,6 +429,8 @@ mod tests {
         let _lock = env_lock().lock().unwrap();
         let (_id, _hash) = set_required_env();
         let _buffer = EnvGuard::unset("TELEGRAM_UPDATE_BUFFER");
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-missing-update-config.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
 
         let config = AppConfig::from_env().unwrap();
         assert_eq!(config.update_buffer, DEFAULT_UPDATE_BUFFER);
@@ -431,6 +443,39 @@ mod tests {
         let _buffer = EnvGuard::set("TELEGRAM_UPDATE_BUFFER", "42");
 
         let config = AppConfig::from_env().unwrap();
+        assert_eq!(config.update_buffer, 42);
+    }
+
+    #[test]
+    fn update_buffer_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-update-config.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[telegram]\nupdate_buffer = 256\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.update_buffer, 256);
+    }
+
+    #[test]
+    fn update_buffer_env_overrides_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-update-config.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        let _buffer = EnvGuard::set("TELEGRAM_UPDATE_BUFFER", "42");
+        std::fs::write(&temp_path, "[telegram]\nupdate_buffer = 256\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
         assert_eq!(config.update_buffer, 42);
     }
 
