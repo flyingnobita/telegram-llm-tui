@@ -9,6 +9,7 @@
 - Export selected chat context to LLM for analysis and draft responses.
 - Present LLM draft to the user for review/edit, then explicit send.
 - Operate as a terminal UI with keyboard-first navigation.
+- Provide message navigation ergonomics: keymaps, scrollback, search, and selection.
 
 ### Non‑functional
 

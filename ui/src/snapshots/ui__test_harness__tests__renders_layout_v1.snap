@@ -2,10 +2,10 @@
 source: ui/src/test_harness.rs
 expression: rendered
 ---
-┌Chats─────────────────┐┌Messages──────────────────────────────────────────────┐
-│General               ││[09:12] Ada: Morning team                             │
-│Product (3)           ││[09:13] You: Morning, syncing on layout               │
-│Design (1)            ││[09:15] Ada: Need the LLM draft soon                  │
+┌Chats─────────────────┐┌Messages (search: draft)──────────────────────────────┐
+│General               ││[  ] [09:12] Ada: Morning team                        │
+│Product (3)           ││> [x ] [09:13] You: Morning, syncing on layout        │
+│Design (1)            ││[ *] [09:15] Ada: Need the LLM draft soon             │
 │                      ││                                                      │
 │                      ││                                                      │
 │                      ││                                                      │

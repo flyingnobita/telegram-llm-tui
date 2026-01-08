@@ -64,7 +64,7 @@ notifications.
 
 1. [x] (3.1) Layout v1: left chat list, main message view, bottom composer;
    modal for LLM-generated drafts; command palette for actions.
-2. [ ] (3.2) Input ergonomics: vim or VSCode-style keymaps, scrollback,
+2. [x] (3.2) Input ergonomics: vim or VSCode-style keymaps, scrollback,
    search in chat, message selection for LLM export.
 3. [ ] (3.3) Accessibility: color themes (light/dark/high-contrast),
    configurable keybindings, resize handling, mouse optional.
