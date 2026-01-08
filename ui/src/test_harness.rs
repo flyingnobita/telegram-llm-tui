@@ -1,6 +1,6 @@
 use ratatui::{backend::TestBackend, buffer::Buffer, Terminal};
 
-use crate::view::{draw, UiState};
+use crate::view::UiState;
 
 pub fn render_to_buffer(state: &UiState, size: (u16, u16)) -> Buffer {
     let (width, height) = size;
@@ -8,7 +8,7 @@ pub fn render_to_buffer(state: &UiState, size: (u16, u16)) -> Buffer {
     let mut terminal = Terminal::new(backend).expect("create test terminal");
 
     terminal
-        .draw(|frame| draw(frame, state))
+        .draw(|frame| crate::view::draw(frame, state))
         .expect("render test frame");
 
     terminal.backend().buffer().clone()
@@ -50,16 +50,19 @@ mod tests {
         state.input.text = "drafting a reply".to_string();
         state.chats = vec![
             ChatListItem {
+                id: 1,
                 title: "General".to_string(),
                 unread: 0,
                 is_selected: true,
             },
             ChatListItem {
+                id: 2,
                 title: "Product".to_string(),
                 unread: 3,
                 is_selected: false,
             },
             ChatListItem {
+                id: 3,
                 title: "Design".to_string(),
                 unread: 1,
                 is_selected: false,
@@ -67,21 +70,28 @@ mod tests {
         ];
         state.messages = vec![
             MessageItem {
+                id: 100,
                 author: "Ada".to_string(),
                 timestamp: "09:12".to_string(),
                 body: "Morning team".to_string(),
             },
             MessageItem {
+                id: 101,
                 author: "You".to_string(),
                 timestamp: "09:13".to_string(),
                 body: "Morning, syncing on layout".to_string(),
             },
             MessageItem {
+                id: 102,
                 author: "Ada".to_string(),
                 timestamp: "09:15".to_string(),
                 body: "Need the LLM draft soon".to_string(),
             },
         ];
+        state.message_view.cursor = Some(1);
+        state.message_view.selected_ids.insert(101);
+        state.message_view.search.query.text = "draft".to_string();
+        state.message_view.search.recompute_matches(&state.messages);
         state
     }
 
