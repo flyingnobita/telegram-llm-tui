@@ -34,8 +34,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing(&config)?;
     info!("loaded configuration");
 
-    let telegram_config =
-        TelegramConfig::new(config.api_id, config.api_hash, config.session_path.clone());
+    let mut telegram_config =
+        TelegramConfig::new(config.api_id, config.api_hash.clone(), config.session_path.clone());
+    telegram_config.send_pipeline = config.send_pipeline_config();
 
     let mut bootstrap = TelegramBootstrap::connect(telegram_config).await?;
     let auth_flow = bootstrap.auth_flow();
