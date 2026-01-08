@@ -21,14 +21,6 @@ tooling, and documentation consistent until the codebase is scaffolded.
   production.
 - LLM auth: local `.env` for dev-only; production secret store planned.
 
-## Planning Workflow
-
-- `PLANS.md` bullets are checklist items; use `- [ ]` and `- [x]` to track
-  completion.
-- When any `*.md` file changes, review other docs for consistency and update
-  them as needed; if a related update could be conflicting or unexpected,
-  notify before making that change.
-
 ## Build, Test, and Development Commands
 
 Tool versions are managed via mise-en-place.
