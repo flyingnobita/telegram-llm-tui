@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::Deserialize;
-use telegram_llm_core::telegram::SendPipelineConfig;
+use telegram_llm_core::telegram::{CacheConfig, CacheLimits, SendPipelineConfig};
 use thiserror::Error;
 use tracing_subscriber::filter::LevelFilter;
 
@@ -17,6 +17,11 @@ const DEFAULT_ERROR_LOG_PATH: &str = "data/logs/app-error.log";
 const DEFAULT_SEND_QUEUE_LIMIT: usize = 256;
 const DEFAULT_SEND_RETRY_BASE_DELAY_MS: u64 = 500;
 const DEFAULT_SEND_RETRY_MAX_DELAY_MS: u64 = 30_000;
+const DEFAULT_CACHE_DB_PATH: &str = "data/cache.sqlite";
+const DEFAULT_CACHE_MAX_CHATS: usize = 0;
+const DEFAULT_CACHE_MAX_MESSAGES_PER_CHAT: usize = 5000;
+const DEFAULT_CACHE_MAX_BYTES: u64 = 0;
+const DEFAULT_CACHE_FLUSH_DEBOUNCE_MS: u64 = 500;
 const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::INFO;
 const DEFAULT_LOG_FORMAT: LogFormat = LogFormat::Plain;
 const DEFAULT_LOG_ROTATION: LogRotation = LogRotation::Size;
@@ -36,6 +41,11 @@ pub struct AppConfig {
     pub send_retry_max_delay_ms: u64,
     pub phone_number: Option<String>,
     pub auth_method: AuthMethod,
+    pub cache_db_path: PathBuf,
+    pub cache_max_chats: usize,
+    pub cache_max_messages_per_chat: usize,
+    pub cache_max_bytes: u64,
+    pub cache_flush_debounce_ms: u64,
     pub log_file_path: PathBuf,
     pub error_log_path: PathBuf,
     pub log_level: LevelFilter,
@@ -56,6 +66,8 @@ pub enum ConfigError {
     InvalidUpdateBuffer(String),
     #[error("invalid auth method: {0}")]
     InvalidAuthMethod(String),
+    #[error("invalid cache db path: {0}")]
+    InvalidCachePath(String),
     #[error("invalid log file path: {0}")]
     InvalidLogPath(String),
     #[error("invalid log level: {0}")]
@@ -93,6 +105,16 @@ struct TelegramSection {
     send_retry_max_attempts: Option<u32>,
     send_retry_base_delay_ms: Option<u64>,
     send_retry_max_delay_ms: Option<u64>,
+    cache: Option<CacheSection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CacheSection {
+    db_path: Option<String>,
+    max_chats: Option<usize>,
+    max_messages_per_chat: Option<usize>,
+    max_bytes: Option<u64>,
+    flush_debounce_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -175,6 +197,50 @@ impl AppConfig {
             .and_then(|telegram| telegram.send_retry_max_delay_ms)
             .unwrap_or(DEFAULT_SEND_RETRY_MAX_DELAY_MS);
         let send_retry_max_delay_ms = send_retry_max_delay_ms.max(send_retry_base_delay_ms);
+
+        let cache_db_path = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.cache.as_ref())
+            .and_then(|cache| cache.db_path.as_ref())
+            .map(|raw| parse_cache_path(raw.to_string()))
+            .transpose()?;
+
+        let cache_db_path = match cache_db_path {
+            Some(path) => path,
+            None => resolve_path(DEFAULT_CACHE_DB_PATH)?,
+        };
+
+        let cache_max_chats = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.cache.as_ref())
+            .and_then(|cache| cache.max_chats)
+            .unwrap_or(DEFAULT_CACHE_MAX_CHATS);
+
+        let cache_max_messages_per_chat = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.cache.as_ref())
+            .and_then(|cache| cache.max_messages_per_chat)
+            .unwrap_or(DEFAULT_CACHE_MAX_MESSAGES_PER_CHAT);
+        let cache_max_messages_per_chat =
+            normalize_cache_max_messages_per_chat(cache_max_messages_per_chat);
+
+        let cache_max_bytes = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.cache.as_ref())
+            .and_then(|cache| cache.max_bytes)
+            .unwrap_or(DEFAULT_CACHE_MAX_BYTES);
+
+        let cache_flush_debounce_ms = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.cache.as_ref())
+            .and_then(|cache| cache.flush_debounce_ms)
+            .unwrap_or(DEFAULT_CACHE_FLUSH_DEBOUNCE_MS);
+        let cache_flush_debounce_ms = normalize_cache_flush_debounce_ms(cache_flush_debounce_ms);
 
         let phone_number = std::env::var("TELEGRAM_PHONE_NUMBER")
             .ok()
@@ -277,6 +343,11 @@ impl AppConfig {
             send_retry_max_delay_ms,
             phone_number,
             auth_method,
+            cache_db_path,
+            cache_max_chats,
+            cache_max_messages_per_chat,
+            cache_max_bytes,
+            cache_flush_debounce_ms,
             log_file_path,
             error_log_path,
             log_level,
@@ -294,6 +365,18 @@ impl AppConfig {
             max_retry_attempts: self.send_retry_max_attempts,
             retry_base_delay: Duration::from_millis(self.send_retry_base_delay_ms),
             retry_max_delay: Duration::from_millis(self.send_retry_max_delay_ms),
+        }
+    }
+
+    pub fn cache_config(&self) -> CacheConfig {
+        CacheConfig {
+            db_path: self.cache_db_path.clone(),
+            limits: CacheLimits {
+                max_chats: self.cache_max_chats,
+                max_messages_per_chat: self.cache_max_messages_per_chat,
+                max_bytes: self.cache_max_bytes as usize,
+            },
+            flush_debounce: Duration::from_millis(self.cache_flush_debounce_ms),
         }
     }
 }
@@ -336,6 +419,14 @@ fn parse_log_path(raw: String) -> Result<PathBuf, ConfigError> {
     resolve_path(trimmed)
 }
 
+fn parse_cache_path(raw: String) -> Result<PathBuf, ConfigError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(ConfigError::InvalidCachePath(raw));
+    }
+    resolve_path(trimmed)
+}
+
 fn parse_log_level(raw: String) -> Result<LevelFilter, ConfigError> {
     raw.trim()
         .parse::<LevelFilter>()
@@ -370,6 +461,22 @@ fn normalize_send_retry_attempts(value: u32) -> Option<u32> {
         None
     } else {
         Some(value)
+    }
+}
+
+fn normalize_cache_max_messages_per_chat(value: usize) -> usize {
+    if value == 0 {
+        DEFAULT_CACHE_MAX_MESSAGES_PER_CHAT
+    } else {
+        value
+    }
+}
+
+fn normalize_cache_flush_debounce_ms(value: u64) -> u64 {
+    if value == 0 {
+        DEFAULT_CACHE_FLUSH_DEBOUNCE_MS
+    } else {
+        value
     }
 }
 
@@ -728,5 +835,57 @@ mod tests {
 
         let config = result.unwrap();
         assert!(!config.log_content);
+    }
+
+    #[test]
+    fn cache_defaults_when_missing() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-cache-defaults.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+
+        let config = AppConfig::from_env().unwrap();
+        let path = config.cache_db_path.to_string_lossy();
+        assert!(path.ends_with(DEFAULT_CACHE_DB_PATH));
+        assert_eq!(config.cache_max_chats, DEFAULT_CACHE_MAX_CHATS);
+        assert_eq!(
+            config.cache_max_messages_per_chat,
+            DEFAULT_CACHE_MAX_MESSAGES_PER_CHAT
+        );
+        assert_eq!(config.cache_max_bytes, DEFAULT_CACHE_MAX_BYTES);
+        assert_eq!(
+            config.cache_flush_debounce_ms,
+            DEFAULT_CACHE_FLUSH_DEBOUNCE_MS
+        );
+    }
+
+    #[test]
+    fn cache_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-cache-config.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(
+            &temp_path,
+            "[telegram.cache]\n\
+db_path = \"data/cache/test.sqlite\"\n\
+max_chats = 99\n\
+max_messages_per_chat = 1234\n\
+max_bytes = 1024\n\
+flush_debounce_ms = 250\n",
+        )
+        .unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        let path = config.cache_db_path.to_string_lossy();
+        assert!(path.ends_with("data/cache/test.sqlite"));
+        assert_eq!(config.cache_max_chats, 99);
+        assert_eq!(config.cache_max_messages_per_chat, 1234);
+        assert_eq!(config.cache_max_bytes, 1024);
+        assert_eq!(config.cache_flush_debounce_ms, 250);
     }
 }

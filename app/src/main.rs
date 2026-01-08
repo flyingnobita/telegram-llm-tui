@@ -8,7 +8,9 @@ use std::time::Duration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use telegram_llm_core::telegram::{AuthResult, QrLoginResult, TelegramBootstrap, TelegramConfig};
+use telegram_llm_core::telegram::{
+    AuthResult, CacheManager, QrLoginResult, SqliteCacheStore, TelegramBootstrap, TelegramConfig,
+};
 use time::{format_description, UtcOffset};
 use tokio::sync::broadcast::error::RecvError;
 use tracing::{info, warn};
@@ -33,6 +35,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::from_env()?;
     init_tracing(&config)?;
     info!("loaded configuration");
+
+    let cache_store = Arc::new(SqliteCacheStore::new(config.cache_db_path.clone()));
+    let cache_manager = CacheManager::spawn(cache_store, config.cache_config()).await?;
 
     let mut telegram_config = TelegramConfig::new(
         config.api_id,
@@ -67,6 +72,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             loop {
                 match event_rx.recv().await {
                     Ok(event) => {
+                        cache_manager.apply_event(&event);
                         info!(?event, "received domain event");
                     }
                     Err(RecvError::Lagged(_)) => {
@@ -82,6 +88,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     event_stream.stop().await;
+    cache_manager.shutdown().await;
     bootstrap.shutdown().await;
     info!("shutdown complete");
     Ok(())

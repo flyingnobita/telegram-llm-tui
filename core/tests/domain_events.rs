@@ -96,6 +96,7 @@ fn maps_new_message_update() {
             assert_eq!(payload.author_id, UserId(1001));
             assert_eq!(payload.timestamp, 111);
             assert_eq!(payload.text, "hello");
+            assert!(!payload.outgoing);
         }
         other => panic!("unexpected event: {other:?}"),
     }
@@ -121,6 +122,7 @@ fn maps_edited_message_update() {
             assert_eq!(payload.editor_id, UserId(1002));
             assert_eq!(payload.timestamp, 250);
             assert_eq!(payload.text, "edited");
+            assert!(!payload.outgoing);
         }
         other => panic!("unexpected event: {other:?}"),
     }

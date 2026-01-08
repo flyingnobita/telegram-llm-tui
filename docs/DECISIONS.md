@@ -9,3 +9,4 @@
   `docs/adr/20260105-llm-friendly-test-framework.md`
 - Logging policy (plain logs, 1 MB rotation, 20 files, content logging on) →
   `docs/adr/20260106-logging-policy.md`
+- Cache persistence store: sqlite → `docs/adr/20260109-cache-store-sqlite.md`
