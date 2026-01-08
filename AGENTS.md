@@ -6,7 +6,7 @@ tooling, and documentation consistent until the codebase is scaffolded.
 ## Project Structure & Module Organization
 
 - Planning and requirements live at the root: `PLANS.md` (execution plan) and
-  `SPEC.md` (requirements + ADR policy).
+  `SPECS.md` (requirements + ADR policy).
 - Architecture decisions are recorded as ADRs in `docs/adr/` with the naming
   pattern `YYYYMMDD-short-title.md`.
 - Planned Rust workspace layout (per `PLANS.md`): `app/` (binary), `core/`
@@ -52,7 +52,7 @@ Tool versions are managed via mise-en-place.
 - No Git history exists yet, so no established commit message convention. Agree
   on a standard before first commits (e.g., Conventional Commits).
 - PRs should include: a short summary, linked issues (if any), and updates to
-  `PLANS.md`, `SPEC.md`, or `docs/adr/*` when decisions change.
+  `PLANS.md`, `SPECS.md`, or `docs/adr/*` when decisions change.
 
 ## Decision Records (ADRs)
 
