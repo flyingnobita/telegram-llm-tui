@@ -19,6 +19,18 @@ send_retry_base_delay_ms = 500
 # Max retry delay in milliseconds for non-rate-limit errors.
 send_retry_max_delay_ms = 30000
 
+[telegram.cache]
+# Cache database path. Relative paths resolve from repo root.
+db_path = "data/cache.sqlite"
+# Max number of chats to keep in cache. Set to 0 for unlimited.
+max_chats = 0
+# Max number of cached messages per chat.
+max_messages_per_chat = 5000
+# Max total cache size in bytes. Set to 0 for unlimited.
+max_bytes = 0
+# Flush debounce in milliseconds.
+flush_debounce_ms = 500
+
 [logging]
 # Primary app log file path. Relative paths resolve from repo root.
 log_file = "data/logs/app.log"
