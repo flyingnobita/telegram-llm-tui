@@ -53,7 +53,7 @@ persistence.
    and expose as channels or streams to the UI layer.
 3. [x] (2.3) Implement send pipeline with rate-limit or backoff handling;
    support text, reply, edit, delete; queue unsent messages when offline.
-4. [ ] (2.4) Add minimal persistence for chat metadata and message cache to
+4. [x] (2.4) Add minimal persistence for chat metadata and message cache to
    reduce network round-trips; keep caches small and pluggable.
 
 ## 3 TUI experience
