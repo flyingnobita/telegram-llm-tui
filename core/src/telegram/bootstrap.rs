@@ -11,6 +11,7 @@ use tokio::task::JoinHandle;
 use crate::telegram::auth::{AuthFlow, GrammersAuthClient};
 use crate::telegram::error::Result;
 use crate::telegram::events::{spawn_domain_event_pump, EventStream};
+use crate::telegram::send::{spawn_grammers_send_pipeline, SendPipeline, SendPipelineConfig};
 use crate::telegram::updates::{spawn_telegram_update_pump, take_updates, UpdatePump};
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,7 @@ pub struct TelegramConfig {
     pub session_path: PathBuf,
     pub updates: UpdatesConfig,
     pub event_stream: EventStreamConfig,
+    pub send_pipeline: SendPipelineConfig,
     pub flood_sleep_threshold: u32,
     pub connection_params: ConnectionParams,
     pub qr_except_ids: Vec<i64>,
@@ -67,6 +69,7 @@ impl TelegramConfig {
             session_path: session_path.into(),
             updates: UpdatesConfig::default(),
             event_stream: EventStreamConfig::default(),
+            send_pipeline: SendPipelineConfig::default(),
             flood_sleep_threshold: 60,
             connection_params: ConnectionParams::default(),
             qr_except_ids: Vec::new(),
@@ -84,6 +87,7 @@ pub struct TelegramBootstrap {
     qr_except_ids: Vec<i64>,
     updates_config: UpdatesConfig,
     event_stream_config: EventStreamConfig,
+    send_pipeline_config: SendPipelineConfig,
 }
 
 impl TelegramBootstrap {
@@ -94,6 +98,7 @@ impl TelegramBootstrap {
             session_path,
             updates: updates_config,
             event_stream: event_stream_config,
+            send_pipeline: send_pipeline_config,
             flood_sleep_threshold,
             connection_params,
             qr_except_ids,
@@ -126,6 +131,7 @@ impl TelegramBootstrap {
             qr_except_ids,
             updates_config,
             event_stream_config,
+            send_pipeline_config,
         })
     }
 
@@ -158,6 +164,10 @@ impl TelegramBootstrap {
     pub fn spawn_event_stream(&mut self, update_buffer: usize) -> Result<EventStream> {
         let update_pump = self.spawn_update_pump(update_buffer)?;
         spawn_domain_event_pump(update_pump, self.event_stream_config.buffer_size)
+    }
+
+    pub fn spawn_send_pipeline(&self) -> SendPipeline {
+        spawn_grammers_send_pipeline(self.client.clone(), self.send_pipeline_config.clone())
     }
 
     pub async fn shutdown(self) {

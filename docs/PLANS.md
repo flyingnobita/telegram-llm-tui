@@ -51,7 +51,7 @@ persistence.
    phone/QR login) and update pump (background async task).
 2. [ ] (2.2) Model domain events (new message, edited, read receipt, typing)
    and expose as channels or streams to the UI layer.
-3. [ ] (2.3) Implement send pipeline with rate-limit or backoff handling;
+3. [x] (2.3) Implement send pipeline with rate-limit or backoff handling;
    support text, reply, edit, delete; queue unsent messages when offline.
 4. [ ] (2.4) Add minimal persistence for chat metadata and message cache to
    reduce network round-trips; keep caches small and pluggable.

@@ -10,6 +10,14 @@ default_method = "phone"
 [telegram]
 # Update pump buffer size (number of events).
 update_buffer = 1024
+# Send pipeline queue capacity.
+send_queue_limit = 256
+# Max retry attempts for send pipeline. Set to 0 for unlimited retries.
+send_retry_max_attempts = 0
+# Base retry delay in milliseconds for non-rate-limit errors.
+send_retry_base_delay_ms = 500
+# Max retry delay in milliseconds for non-rate-limit errors.
+send_retry_max_delay_ms = 30000
 
 [logging]
 # Primary app log file path. Relative paths resolve from repo root.

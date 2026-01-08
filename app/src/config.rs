@@ -1,6 +1,8 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use serde::Deserialize;
+use telegram_llm_core::telegram::SendPipelineConfig;
 use thiserror::Error;
 use tracing_subscriber::filter::LevelFilter;
 
@@ -12,6 +14,9 @@ const DEFAULT_AUTH_METHOD: AuthMethod = AuthMethod::Phone;
 const DEFAULT_CONFIG_PATH: &str = "app/config/app.toml";
 const DEFAULT_LOG_FILE_PATH: &str = "data/logs/app.log";
 const DEFAULT_ERROR_LOG_PATH: &str = "data/logs/app-error.log";
+const DEFAULT_SEND_QUEUE_LIMIT: usize = 256;
+const DEFAULT_SEND_RETRY_BASE_DELAY_MS: u64 = 500;
+const DEFAULT_SEND_RETRY_MAX_DELAY_MS: u64 = 30_000;
 const DEFAULT_LOG_LEVEL: LevelFilter = LevelFilter::INFO;
 const DEFAULT_LOG_FORMAT: LogFormat = LogFormat::Plain;
 const DEFAULT_LOG_ROTATION: LogRotation = LogRotation::Size;
@@ -25,6 +30,10 @@ pub struct AppConfig {
     pub api_hash: String,
     pub session_path: PathBuf,
     pub update_buffer: usize,
+    pub send_queue_limit: usize,
+    pub send_retry_max_attempts: Option<u32>,
+    pub send_retry_base_delay_ms: u64,
+    pub send_retry_max_delay_ms: u64,
     pub phone_number: Option<String>,
     pub auth_method: AuthMethod,
     pub log_file_path: PathBuf,
@@ -80,6 +89,10 @@ struct AuthSection {
 #[derive(Debug, Deserialize)]
 struct TelegramSection {
     update_buffer: Option<usize>,
+    send_queue_limit: Option<usize>,
+    send_retry_max_attempts: Option<u32>,
+    send_retry_base_delay_ms: Option<u64>,
+    send_retry_max_delay_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -136,6 +149,32 @@ impl AppConfig {
                 .and_then(|telegram| telegram.update_buffer)
                 .unwrap_or(DEFAULT_UPDATE_BUFFER),
         };
+
+        let send_queue_limit = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.send_queue_limit)
+            .unwrap_or(DEFAULT_SEND_QUEUE_LIMIT);
+        let send_queue_limit = normalize_send_queue_limit(send_queue_limit);
+
+        let send_retry_max_attempts = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.send_retry_max_attempts)
+            .and_then(normalize_send_retry_attempts);
+
+        let send_retry_base_delay_ms = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.send_retry_base_delay_ms)
+            .unwrap_or(DEFAULT_SEND_RETRY_BASE_DELAY_MS);
+
+        let send_retry_max_delay_ms = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.send_retry_max_delay_ms)
+            .unwrap_or(DEFAULT_SEND_RETRY_MAX_DELAY_MS);
+        let send_retry_max_delay_ms = send_retry_max_delay_ms.max(send_retry_base_delay_ms);
 
         let phone_number = std::env::var("TELEGRAM_PHONE_NUMBER")
             .ok()
@@ -232,6 +271,10 @@ impl AppConfig {
             api_hash,
             session_path,
             update_buffer,
+            send_queue_limit,
+            send_retry_max_attempts,
+            send_retry_base_delay_ms,
+            send_retry_max_delay_ms,
             phone_number,
             auth_method,
             log_file_path,
@@ -243,6 +286,15 @@ impl AppConfig {
             rotation_max_files,
             log_content,
         })
+    }
+
+    pub fn send_pipeline_config(&self) -> SendPipelineConfig {
+        SendPipelineConfig {
+            queue_limit: self.send_queue_limit,
+            max_retry_attempts: self.send_retry_max_attempts,
+            retry_base_delay: Duration::from_millis(self.send_retry_base_delay_ms),
+            retry_max_delay: Duration::from_millis(self.send_retry_max_delay_ms),
+        }
     }
 }
 
@@ -302,6 +354,22 @@ fn parse_log_rotation(raw: String) -> Result<LogRotation, ConfigError> {
         "size" => Ok(LogRotation::Size),
         "daily" => Ok(LogRotation::Daily),
         other => Err(ConfigError::InvalidLogRotation(other.to_string())),
+    }
+}
+
+fn normalize_send_queue_limit(value: usize) -> usize {
+    if value == 0 {
+        DEFAULT_SEND_QUEUE_LIMIT
+    } else {
+        value
+    }
+}
+
+fn normalize_send_retry_attempts(value: u32) -> Option<u32> {
+    if value == 0 {
+        None
+    } else {
+        Some(value)
     }
 }
 
