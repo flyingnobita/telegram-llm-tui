@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod bootstrap;
+pub mod cache;
 pub mod error;
 pub mod events;
 pub mod send;
@@ -8,6 +9,10 @@ pub mod updates;
 pub use auth::{AuthFlow, AuthResult, PhoneLogin, QrLogin, QrLoginResult};
 pub use bootstrap::{
     EventDropPolicy, EventStreamConfig, TelegramBootstrap, TelegramConfig, UpdatesConfig,
+};
+pub use cache::{
+    CacheConfig, CacheError, CacheLimits, CacheManager, CacheSnapshot, CacheStore, CachedMessage,
+    ChatPeerKind, ChatSummary, SqliteCacheStore,
 };
 pub use error::{Result, TelegramError};
 pub use events::{

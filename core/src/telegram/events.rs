@@ -23,6 +23,7 @@ pub struct MessageNew {
     pub author_id: UserId,
     pub timestamp: i64,
     pub text: String,
+    pub outgoing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +33,7 @@ pub struct MessageEdited {
     pub editor_id: UserId,
     pub timestamp: i64,
     pub text: String,
+    pub outgoing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +97,7 @@ impl EventMapper {
             author_id: fields.author_id,
             timestamp: fields.date,
             text: fields.text,
+            outgoing: fields.outgoing,
         }))
     }
 
@@ -107,6 +110,7 @@ impl EventMapper {
             editor_id: fields.author_id,
             timestamp,
             text: fields.text,
+            outgoing: fields.outgoing,
         }))
     }
 
@@ -164,6 +168,7 @@ impl EventMapper {
                     date: message.date as i64,
                     edit_date: message.edit_date.map(|value| value as i64),
                     text: message.message.clone(),
+                    outgoing: message.out,
                 })
             }
             _ => {
@@ -271,6 +276,7 @@ struct ParsedMessage {
     date: i64,
     edit_date: Option<i64>,
     text: String,
+    outgoing: bool,
 }
 
 fn user_id_from_peer(peer: &tl::enums::Peer) -> Option<UserId> {
