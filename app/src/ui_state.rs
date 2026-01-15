@@ -25,6 +25,25 @@ impl UiCacheBridge {
         self.selected_chat = chat_id;
     }
 
+    #[cfg(test)]
+    pub fn selected_chat(&self) -> Option<ChatId> {
+        self.selected_chat
+    }
+
+    pub fn sync_selected_chat_from_state(&mut self) -> bool {
+        let selected = self
+            .state
+            .chats
+            .iter()
+            .find(|chat| chat.is_selected)
+            .map(|chat| ChatId(chat.id));
+        if selected != self.selected_chat {
+            self.selected_chat = selected;
+            return true;
+        }
+        false
+    }
+
     pub fn refresh(&mut self, cache: &CacheManager) -> Option<ChatId> {
         let summaries = cache.chat_summaries();
         let (chat_items, selected_chat) = map_chat_summaries(&summaries, self.selected_chat);
@@ -227,5 +246,46 @@ mod tests {
         assert_eq!(bridge.state.messages[1].timestamp, "00:02");
 
         manager.shutdown().await;
+    }
+
+    #[test]
+    fn sync_selected_chat_from_state_updates_selection() {
+        let mut bridge = UiCacheBridge::new(None);
+        bridge.state.chats = vec![
+            ChatListItem {
+                id: 10,
+                title: "General".to_string(),
+                unread: 0,
+                is_selected: false,
+            },
+            ChatListItem {
+                id: 11,
+                title: "Design".to_string(),
+                unread: 0,
+                is_selected: true,
+            },
+        ];
+
+        let changed = bridge.sync_selected_chat_from_state();
+
+        assert!(changed);
+        assert_eq!(bridge.selected_chat(), Some(ChatId(11)));
+    }
+
+    #[test]
+    fn sync_selected_chat_from_state_no_change() {
+        let mut bridge = UiCacheBridge::new(None);
+        bridge.state.chats = vec![ChatListItem {
+            id: 10,
+            title: "General".to_string(),
+            unread: 0,
+            is_selected: true,
+        }];
+        bridge.set_selected_chat(Some(ChatId(10)));
+
+        let changed = bridge.sync_selected_chat_from_state();
+
+        assert!(!changed);
+        assert_eq!(bridge.selected_chat(), Some(ChatId(10)));
     }
 }
