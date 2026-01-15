@@ -62,10 +62,12 @@ persistence.
 data). **Sub-feature ordering:** Layout -> input ergonomics -> accessibility ->
 notifications.
 
-1. [x] (3.1) Layout v1: left chat list, main message view, bottom composer;
-   modal for LLM-generated drafts; command palette for actions.
-2. [x] (3.2) Input ergonomics: vim or VSCode-style keymaps, scrollback,
-   search in chat, message selection for LLM export.
+1. [ ] (3.1) Layout v1: left chat list, main message view, bottom composer;
+   modal for LLM-generated drafts; command palette for actions; runtime TUI
+   loop in the app to render the layout.
+2. [ ] (3.2) Input ergonomics: vim or VSCode-style keymaps, scrollback,
+   search in chat, message selection for LLM export; runtime input loop
+   wiring for keymaps and redraw.
 3. [ ] (3.3) Accessibility: color themes (light/dark/high-contrast),
    configurable keybindings, resize handling, mouse optional.
 4. [ ] (3.4) Notifications: status bar for connection state; optional desktop
