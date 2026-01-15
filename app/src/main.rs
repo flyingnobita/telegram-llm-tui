@@ -11,7 +11,8 @@ use std::time::Duration;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use telegram_llm_core::telegram::{
-    AuthResult, CacheManager, QrLoginResult, SqliteCacheStore, TelegramBootstrap, TelegramConfig,
+    fetch_dialog_summaries, AuthResult, CacheManager, QrLoginResult, SqliteCacheStore,
+    TelegramBootstrap, TelegramConfig,
 };
 use time::{format_description, UtcOffset};
 use tracing::{info, warn};
@@ -69,6 +70,18 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         info!("already authorized");
     }
 
+    match sync_dialog_summaries(&bootstrap, &cache_manager).await {
+        Ok(count) => {
+            info!(count, "synced dialog summaries");
+            if count > 0 {
+                ui_bridge.refresh(&cache_manager);
+            }
+        }
+        Err(err) => {
+            warn!(error = %err, "failed to sync dialog summaries");
+        }
+    }
+
     info!("starting domain event stream");
     let event_stream = bootstrap.spawn_event_stream(config.update_buffer)?;
     let event_rx = event_stream.subscribe();
@@ -86,6 +99,18 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     bootstrap.shutdown().await;
     info!("shutdown complete");
     Ok(())
+}
+
+async fn sync_dialog_summaries(
+    bootstrap: &TelegramBootstrap,
+    cache_manager: &CacheManager,
+) -> telegram_llm_core::telegram::Result<usize> {
+    let summaries = fetch_dialog_summaries(bootstrap.client()).await?;
+    let count = summaries.len();
+    for summary in summaries {
+        cache_manager.upsert_chat(summary);
+    }
+    Ok(count)
 }
 
 fn init_tracing(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
