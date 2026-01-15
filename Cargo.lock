@@ -48,8 +48,10 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "crossterm",
  "dotenvy",
  "llm",
+ "ratatui",
  "serde",
  "telegram_llm_core",
  "thiserror 1.0.69",
