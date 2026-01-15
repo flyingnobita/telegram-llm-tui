@@ -1,5 +1,6 @@
 # Changes
 
+- Jan-15, 2026 - 10:27 PM +0800 - Synced dialog titles so chat list shows names.
 - Jan-15, 2026 - 09:54 PM +0800 - Cleared message pane before render.
 - Jan-15, 2026 - 09:51 PM +0800 - Highlighted the focused TUI pane border in red.
 - Jan-15, 2026 - 09:34 PM +0800 - Wired keymap config and viewport paging.
