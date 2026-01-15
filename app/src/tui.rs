@@ -19,8 +19,8 @@ use tracing::{info, warn};
 
 use telegram_llm_core::telegram::{CacheManager, EventReceiver};
 use ui::interaction::{handle_ui_key, KeymapStyle};
-use ui::view::message_viewport_page_size;
 use ui::view::UiState;
+use ui::view::{chat_list_max_scroll, chat_list_viewport_width, message_viewport_page_size};
 
 use crate::ui_state::UiCacheBridge;
 
@@ -132,14 +132,23 @@ fn is_exit_key(key: &KeyEvent) -> bool {
 }
 
 fn apply_page_size(state: &mut UiState, terminal_area: Rect) {
-    let page_size = message_page_size(terminal_area);
+    let chat_viewport_width = chat_list_viewport_width(terminal_area, state.chat_list_width);
+    if state.chat_list_viewport_width != chat_viewport_width {
+        state.chat_list_viewport_width = chat_viewport_width;
+    }
+    let max_scroll = chat_list_max_scroll(state);
+    if state.chat_list_scroll > max_scroll {
+        state.chat_list_scroll = max_scroll;
+    }
+
+    let page_size = message_page_size(terminal_area, state.chat_list_width);
     if state.message_view.page_size != page_size {
         state.message_view.page_size = page_size;
     }
 }
 
-fn message_page_size(terminal_area: Rect) -> usize {
-    message_viewport_page_size(terminal_area)
+fn message_page_size(terminal_area: Rect, chat_list_width: u16) -> usize {
+    message_viewport_page_size(terminal_area, chat_list_width)
 }
 
 fn spawn_input_thread(
@@ -241,14 +250,14 @@ mod tests {
     #[test]
     fn message_page_size_clamps_to_minimum() {
         let area = Rect::new(0, 0, 10, 0);
-        assert_eq!(message_page_size(area), 1);
+        assert_eq!(message_page_size(area, 32), 1);
         let area = Rect::new(0, 0, 10, 3);
-        assert_eq!(message_page_size(area), 1);
+        assert_eq!(message_page_size(area, 32), 1);
     }
 
     #[test]
     fn message_page_size_reserves_composer_and_border() {
         let area = Rect::new(0, 0, 10, 10);
-        assert_eq!(message_page_size(area), 5);
+        assert_eq!(message_page_size(area, 32), 5);
     }
 }

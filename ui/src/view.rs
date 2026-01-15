@@ -9,12 +9,25 @@ use ratatui::{
 
 use crate::input::InputState;
 
+const DEFAULT_CHAT_LIST_WIDTH: u16 = 32;
+
 #[derive(Debug, Clone)]
 pub struct ChatListItem {
     pub id: i64,
     pub title: String,
     pub unread: u32,
     pub is_selected: bool,
+}
+
+impl ChatListItem {
+    pub fn label(&self) -> String {
+        let unread = if self.unread > 0 {
+            format!(" ({})", self.unread)
+        } else {
+            String::new()
+        };
+        format!("{}{}", self.title, unread)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -162,7 +175,7 @@ pub struct CommandPaletteState {
     pub selected: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct UiState {
     pub focus: UiFocus,
     pub input: InputState,
@@ -171,6 +184,26 @@ pub struct UiState {
     pub message_view: MessageViewState,
     pub draft_modal: DraftModalState,
     pub command_palette: CommandPaletteState,
+    pub chat_list_width: u16,
+    pub chat_list_scroll: usize,
+    pub chat_list_viewport_width: u16,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        Self {
+            focus: UiFocus::default(),
+            input: InputState::default(),
+            chats: Vec::new(),
+            messages: Vec::new(),
+            message_view: MessageViewState::default(),
+            draft_modal: DraftModalState::default(),
+            command_palette: CommandPaletteState::default(),
+            chat_list_width: DEFAULT_CHAT_LIST_WIDTH,
+            chat_list_scroll: 0,
+            chat_list_viewport_width: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -180,15 +213,17 @@ struct LayoutAreas {
     composer: Rect,
 }
 
-fn layout_areas(area: Rect) -> LayoutAreas {
+fn layout_areas(area: Rect, chat_list_width: u16) -> LayoutAreas {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(3)])
         .split(area);
 
+    let chat_list_width = clamp_chat_list_width(area.width, chat_list_width);
+
     let columns = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(24), Constraint::Min(1)])
+        .constraints([Constraint::Length(chat_list_width), Constraint::Min(1)])
         .split(rows[0]);
 
     LayoutAreas {
@@ -198,14 +233,45 @@ fn layout_areas(area: Rect) -> LayoutAreas {
     }
 }
 
-pub fn message_viewport_area(area: Rect) -> Rect {
-    layout_areas(area).messages
+pub fn message_viewport_area(area: Rect, chat_list_width: u16) -> Rect {
+    layout_areas(area, chat_list_width).messages
 }
 
-pub fn message_viewport_page_size(area: Rect) -> usize {
-    let message_area = message_viewport_area(area);
+pub fn message_viewport_page_size(area: Rect, chat_list_width: u16) -> usize {
+    let message_area = message_viewport_area(area, chat_list_width);
     let inner = Block::default().borders(Borders::ALL).inner(message_area);
     inner.height.max(1) as usize
+}
+
+pub fn chat_list_viewport_width(area: Rect, chat_list_width: u16) -> u16 {
+    let chat_area = layout_areas(area, chat_list_width).chat_list;
+    Block::default()
+        .borders(Borders::ALL)
+        .inner(chat_area)
+        .width
+}
+
+pub fn chat_list_max_scroll(state: &UiState) -> usize {
+    let viewport_width = state.chat_list_viewport_width.max(1) as usize;
+    let labels: Vec<String> = if state.chats.is_empty() {
+        vec!["No chats".to_string()]
+    } else {
+        state.chats.iter().map(ChatListItem::label).collect()
+    };
+    let max_label_len = labels
+        .iter()
+        .map(|label| label.chars().count())
+        .max()
+        .unwrap_or(0);
+    max_label_len.saturating_sub(viewport_width)
+}
+
+fn clamp_chat_list_width(area_width: u16, desired: u16) -> u16 {
+    if area_width <= 1 {
+        return area_width.max(1);
+    }
+    let max_width = area_width.saturating_sub(1).max(1);
+    desired.max(1).min(max_width)
 }
 
 fn focus_border_style(is_focused: bool) -> Style {
@@ -222,7 +288,7 @@ fn is_message_focus(focus: UiFocus) -> bool {
 
 pub fn draw(frame: &mut Frame, state: &UiState) {
     let area = frame.size();
-    let layout = layout_areas(area);
+    let layout = layout_areas(area, state.chat_list_width);
     let overlay_active = state.draft_modal.is_open || state.command_palette.is_open;
     let chat_focused = !overlay_active && state.focus == UiFocus::Chats;
     let message_focused = !overlay_active && is_message_focus(state.focus);
@@ -230,34 +296,38 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
 
     frame.render_widget(Clear, layout.messages);
 
-    let chat_items: Vec<ListItem> = if state.chats.is_empty() {
-        vec![ListItem::new("No chats")]
+    let chat_labels: Vec<String> = if state.chats.is_empty() {
+        vec!["No chats".to_string()]
     } else {
-        state
-            .chats
-            .iter()
-            .map(|chat| {
-                let unread = if chat.unread > 0 {
-                    format!(" ({})", chat.unread)
-                } else {
-                    String::new()
-                };
-                ListItem::new(format!("{}{}", chat.title, unread))
-            })
-            .collect()
+        state.chats.iter().map(ChatListItem::label).collect()
     };
+    let chat_inner_width = Block::default()
+        .borders(Borders::ALL)
+        .inner(layout.chat_list)
+        .width
+        .max(1) as usize;
+    let max_label_len = chat_labels
+        .iter()
+        .map(|label| label.chars().count())
+        .max()
+        .unwrap_or(0);
+    let max_scroll = max_label_len.saturating_sub(chat_inner_width);
+    let scroll_offset = state.chat_list_scroll.min(max_scroll);
+    let chat_items: Vec<ListItem> = chat_labels
+        .into_iter()
+        .map(|label| ListItem::new(apply_horizontal_scroll(&label, scroll_offset)))
+        .collect();
 
     let mut chat_state = ListState::default();
     let selected_chat = state.chats.iter().position(|chat| chat.is_selected);
     chat_state.select(selected_chat);
 
+    let chat_block = Block::default()
+        .title("Chats")
+        .borders(Borders::ALL)
+        .border_style(focus_border_style(chat_focused));
     let chat_list = List::new(chat_items)
-        .block(
-            Block::default()
-                .title("Chats")
-                .borders(Borders::ALL)
-                .border_style(focus_border_style(chat_focused)),
-        )
+        .block(chat_block)
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     let (message_text, scroll_offset) = build_message_text(state);
@@ -291,6 +361,13 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
     if state.command_palette.is_open {
         draw_command_palette(frame, state, area);
     }
+}
+
+fn apply_horizontal_scroll(text: &str, offset: usize) -> String {
+    if offset == 0 {
+        return text.to_string();
+    }
+    text.chars().skip(offset).collect()
 }
 
 fn message_view_title(state: &UiState) -> String {
@@ -467,12 +544,26 @@ mod tests {
     #[test]
     fn message_viewport_page_size_clamps_to_minimum() {
         let area = Rect::new(0, 0, 10, 1);
-        assert_eq!(message_viewport_page_size(area), 1);
+        assert_eq!(message_viewport_page_size(area, DEFAULT_CHAT_LIST_WIDTH), 1);
     }
 
     #[test]
     fn message_viewport_page_size_reserves_composer_and_border() {
         let area = Rect::new(0, 0, 10, 10);
-        assert_eq!(message_viewport_page_size(area), 5);
+        assert_eq!(message_viewport_page_size(area, DEFAULT_CHAT_LIST_WIDTH), 5);
+    }
+
+    #[test]
+    fn chat_list_max_scroll_respects_viewport() {
+        let mut state = UiState::default();
+        state.chat_list_viewport_width = 8;
+        state.chats = vec![ChatListItem {
+            id: 1,
+            title: "Long Chat Title".to_string(),
+            unread: 0,
+            is_selected: true,
+        }];
+
+        assert_eq!(chat_list_max_scroll(&state), 7);
     }
 }

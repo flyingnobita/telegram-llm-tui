@@ -52,3 +52,5 @@ log_content = true
 [ui]
 # Supported values: "vim", "vscode"
 keymap = "vscode"
+# Chat list width in columns. Set to 0 to use the default.
+chat_list_width = 32

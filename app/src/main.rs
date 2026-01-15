@@ -39,11 +39,15 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::from_env()?;
     init_tracing(&config)?;
     info!("loaded configuration");
-    info!(keymap = ?config.keymap_style, "configured tui keymap");
+    info!(
+        keymap = ?config.keymap_style,
+        chat_list_width = config.chat_list_width,
+        "configured tui layout"
+    );
 
     let cache_store = Arc::new(SqliteCacheStore::new(config.cache_db_path.clone()));
     let cache_manager = CacheManager::spawn(cache_store, config.cache_config()).await?;
-    let mut ui_bridge = UiCacheBridge::new(None);
+    let mut ui_bridge = UiCacheBridge::new(None, config.chat_list_width);
     ui_bridge.refresh(&cache_manager);
 
     let mut telegram_config = TelegramConfig::new(

@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::input::{handle_key as handle_text_key, InputState};
-use crate::view::{ChatListItem, UiFocus, UiState};
+use crate::view::{chat_list_max_scroll, ChatListItem, UiFocus, UiState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum KeymapStyle {
@@ -55,6 +55,10 @@ fn handle_chats_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> b
             move_chat_selection(&mut state.chats, 1);
             true
         }
+        (KeyCode::Left, _) => scroll_chat_list(state, -1),
+        (KeyCode::Right, _) => scroll_chat_list(state, 1),
+        (KeyCode::Char('h'), KeymapStyle::Vim) => scroll_chat_list(state, -1),
+        (KeyCode::Char('l'), KeymapStyle::Vim) => scroll_chat_list(state, 1),
         (KeyCode::Enter, _) => {
             state.focus = UiFocus::Messages;
             true
@@ -350,6 +354,20 @@ fn move_chat_selection(chats: &mut [ChatListItem], delta: i32) {
     }
 }
 
+fn scroll_chat_list(state: &mut UiState, delta: i32) -> bool {
+    let max_scroll = chat_list_max_scroll(state);
+    if max_scroll == 0 {
+        return false;
+    }
+    let current = state.chat_list_scroll as i32;
+    let next = (current + delta).clamp(0, max_scroll as i32) as usize;
+    if next == state.chat_list_scroll {
+        return false;
+    }
+    state.chat_list_scroll = next;
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -491,5 +509,34 @@ mod tests {
 
         assert!(state.chats[1].is_selected);
         assert!(!state.chats[0].is_selected);
+    }
+
+    #[test]
+    fn chat_list_scrolls_horizontally() {
+        let mut state = UiState {
+            focus: UiFocus::Chats,
+            chat_list_viewport_width: 8,
+            chats: vec![ChatListItem {
+                id: 1,
+                title: "VeryLongChatName".to_string(),
+                unread: 0,
+                is_selected: true,
+            }],
+            ..Default::default()
+        };
+
+        handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.chat_list_scroll, 1);
+
+        handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.chat_list_scroll, 0);
     }
 }

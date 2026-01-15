@@ -30,6 +30,7 @@ const DEFAULT_ROTATION_MAX_SIZE_MB: u64 = 1;
 const DEFAULT_ROTATION_MAX_FILES: usize = 20;
 const DEFAULT_LOG_CONTENT: bool = true;
 const DEFAULT_KEYMAP_STYLE: KeymapStyle = KeymapStyle::Vscode;
+const DEFAULT_CHAT_LIST_WIDTH: u16 = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
@@ -57,6 +58,7 @@ pub struct AppConfig {
     pub rotation_max_files: usize,
     pub log_content: bool,
     pub keymap_style: KeymapStyle,
+    pub chat_list_width: u16,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -138,6 +140,7 @@ struct LoggingSection {
 #[derive(Debug, Deserialize)]
 struct UiSection {
     keymap: Option<String>,
+    chat_list_width: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -351,6 +354,13 @@ impl AppConfig {
             .transpose()?
             .unwrap_or(DEFAULT_KEYMAP_STYLE);
 
+        let chat_list_width = file_config
+            .as_ref()
+            .and_then(|config| config.ui.as_ref())
+            .and_then(|ui| ui.chat_list_width)
+            .unwrap_or(DEFAULT_CHAT_LIST_WIDTH);
+        let chat_list_width = normalize_chat_list_width(chat_list_width);
+
         Ok(Self {
             api_id,
             api_hash,
@@ -376,6 +386,7 @@ impl AppConfig {
             rotation_max_files,
             log_content,
             keymap_style,
+            chat_list_width,
         })
     }
 
@@ -503,6 +514,14 @@ fn normalize_cache_max_messages_per_chat(value: usize) -> usize {
 fn normalize_cache_flush_debounce_ms(value: u64) -> u64 {
     if value == 0 {
         DEFAULT_CACHE_FLUSH_DEBOUNCE_MS
+    } else {
+        value
+    }
+}
+
+fn normalize_chat_list_width(value: u16) -> u16 {
+    if value == 0 {
+        DEFAULT_CHAT_LIST_WIDTH
     } else {
         value
     }
@@ -890,6 +909,49 @@ mod tests {
 
         let config = result.unwrap();
         assert_eq!(config.keymap_style, KeymapStyle::Vim);
+    }
+
+    #[test]
+    fn chat_list_width_defaults_when_missing() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-missing-ui-width.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+
+        let config = AppConfig::from_env().unwrap();
+        assert_eq!(config.chat_list_width, DEFAULT_CHAT_LIST_WIDTH);
+    }
+
+    #[test]
+    fn chat_list_width_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-chat-width.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[ui]\nchat_list_width = 40\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.chat_list_width, 40);
+    }
+
+    #[test]
+    fn chat_list_width_uses_default_when_zero() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-chat-width-zero.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[ui]\nchat_list_width = 0\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.chat_list_width, DEFAULT_CHAT_LIST_WIDTH);
     }
 
     #[test]
