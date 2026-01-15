@@ -1,5 +1,9 @@
 # Changes
 
+- Jan-15, 2026 - 09:54 PM +0800 - Cleared message pane before render.
+- Jan-15, 2026 - 09:51 PM +0800 - Highlighted the focused TUI pane border in red.
+- Jan-15, 2026 - 09:34 PM +0800 - Wired keymap config and viewport paging.
+- Jan-15, 2026 - 09:15 PM +0800 - Added runtime TUI loop for layout and input.
 - Jan-09, 2026 - 01:40 AM +0800 - Added input ergonomics state and keymap handlers.
 - Jan-09, 2026 - 01:14 AM +0800 - Wired cache data into UI state bridge and tests.
 - Jan-09, 2026 - 12:55 AM +0800 - Added layout v1 with chat list, composer, overlays.

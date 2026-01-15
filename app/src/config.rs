@@ -5,6 +5,7 @@ use serde::Deserialize;
 use telegram_llm_core::telegram::{CacheConfig, CacheLimits, SendPipelineConfig};
 use thiserror::Error;
 use tracing_subscriber::filter::LevelFilter;
+use ui::interaction::KeymapStyle;
 
 use crate::prompt::AuthMethod;
 
@@ -28,6 +29,7 @@ const DEFAULT_LOG_ROTATION: LogRotation = LogRotation::Size;
 const DEFAULT_ROTATION_MAX_SIZE_MB: u64 = 1;
 const DEFAULT_ROTATION_MAX_FILES: usize = 20;
 const DEFAULT_LOG_CONTENT: bool = true;
+const DEFAULT_KEYMAP_STYLE: KeymapStyle = KeymapStyle::Vscode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
@@ -54,6 +56,7 @@ pub struct AppConfig {
     pub rotation_max_size_bytes: u64,
     pub rotation_max_files: usize,
     pub log_content: bool,
+    pub keymap_style: KeymapStyle,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -80,6 +83,8 @@ pub enum ConfigError {
     InvalidLogRotationSize(String),
     #[error("invalid log rotation files: {0}")]
     InvalidLogRotationFiles(String),
+    #[error("invalid keymap style: {0}")]
+    InvalidKeymapStyle(String),
     #[error("failed to read config file: {0}")]
     ConfigRead(String),
     #[error("failed to resolve current directory: {0}")]
@@ -91,6 +96,7 @@ struct FileConfig {
     auth: Option<AuthSection>,
     logging: Option<LoggingSection>,
     telegram: Option<TelegramSection>,
+    ui: Option<UiSection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -127,6 +133,11 @@ struct LoggingSection {
     rotation_max_size_mb: Option<u64>,
     rotation_max_files: Option<usize>,
     log_content: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UiSection {
+    keymap: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -332,6 +343,14 @@ impl AppConfig {
             .and_then(|logging| logging.log_content)
             .unwrap_or(DEFAULT_LOG_CONTENT);
 
+        let keymap_style = file_config
+            .as_ref()
+            .and_then(|config| config.ui.as_ref())
+            .and_then(|ui| ui.keymap.as_ref())
+            .map(|raw| parse_keymap_style(raw.to_string()))
+            .transpose()?
+            .unwrap_or(DEFAULT_KEYMAP_STYLE);
+
         Ok(Self {
             api_id,
             api_hash,
@@ -356,6 +375,7 @@ impl AppConfig {
             rotation_max_size_bytes,
             rotation_max_files,
             log_content,
+            keymap_style,
         })
     }
 
@@ -445,6 +465,14 @@ fn parse_log_rotation(raw: String) -> Result<LogRotation, ConfigError> {
         "size" => Ok(LogRotation::Size),
         "daily" => Ok(LogRotation::Daily),
         other => Err(ConfigError::InvalidLogRotation(other.to_string())),
+    }
+}
+
+fn parse_keymap_style(raw: String) -> Result<KeymapStyle, ConfigError> {
+    match raw.trim().to_lowercase().as_str() {
+        "vim" => Ok(KeymapStyle::Vim),
+        "vscode" => Ok(KeymapStyle::Vscode),
+        other => Err(ConfigError::InvalidKeymapStyle(other.to_string())),
     }
 }
 
@@ -835,6 +863,49 @@ mod tests {
 
         let config = result.unwrap();
         assert!(!config.log_content);
+    }
+
+    #[test]
+    fn keymap_style_defaults_when_missing() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-missing-ui.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+
+        let config = AppConfig::from_env().unwrap();
+        assert_eq!(config.keymap_style, KeymapStyle::Vscode);
+    }
+
+    #[test]
+    fn keymap_style_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-keymap.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[ui]\nkeymap = \"vim\"\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.keymap_style, KeymapStyle::Vim);
+    }
+
+    #[test]
+    fn invalid_keymap_style_returns_error() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-invalid-keymap.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[ui]\nkeymap = \"emacs\"\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let err = result.unwrap_err();
+        assert_eq!(err, ConfigError::InvalidKeymapStyle("emacs".to_string()));
     }
 
     #[test]

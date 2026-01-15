@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
@@ -173,8 +173,14 @@ pub struct UiState {
     pub command_palette: CommandPaletteState,
 }
 
-pub fn draw(frame: &mut Frame, state: &UiState) {
-    let area = frame.size();
+#[derive(Debug, Clone, Copy)]
+struct LayoutAreas {
+    chat_list: Rect,
+    messages: Rect,
+    composer: Rect,
+}
+
+fn layout_areas(area: Rect) -> LayoutAreas {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(3)])
@@ -184,6 +190,45 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(24), Constraint::Min(1)])
         .split(rows[0]);
+
+    LayoutAreas {
+        chat_list: columns[0],
+        messages: columns[1],
+        composer: rows[1],
+    }
+}
+
+pub fn message_viewport_area(area: Rect) -> Rect {
+    layout_areas(area).messages
+}
+
+pub fn message_viewport_page_size(area: Rect) -> usize {
+    let message_area = message_viewport_area(area);
+    let inner = Block::default().borders(Borders::ALL).inner(message_area);
+    inner.height.max(1) as usize
+}
+
+fn focus_border_style(is_focused: bool) -> Style {
+    if is_focused {
+        Style::default().fg(Color::Red)
+    } else {
+        Style::default()
+    }
+}
+
+fn is_message_focus(focus: UiFocus) -> bool {
+    matches!(focus, UiFocus::Messages | UiFocus::Search)
+}
+
+pub fn draw(frame: &mut Frame, state: &UiState) {
+    let area = frame.size();
+    let layout = layout_areas(area);
+    let overlay_active = state.draft_modal.is_open || state.command_palette.is_open;
+    let chat_focused = !overlay_active && state.focus == UiFocus::Chats;
+    let message_focused = !overlay_active && is_message_focus(state.focus);
+    let composer_focused = !overlay_active && state.focus == UiFocus::Composer;
+
+    frame.render_widget(Clear, layout.messages);
 
     let chat_items: Vec<ListItem> = if state.chats.is_empty() {
         vec![ListItem::new("No chats")]
@@ -207,7 +252,12 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
     chat_state.select(selected_chat);
 
     let chat_list = List::new(chat_items)
-        .block(Block::default().title("Chats").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("Chats")
+                .borders(Borders::ALL)
+                .border_style(focus_border_style(chat_focused)),
+        )
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     let (message_text, scroll_offset) = build_message_text(state);
@@ -216,14 +266,23 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
     let message_view = Paragraph::new(message_text)
         .wrap(Wrap { trim: true })
         .scroll((scroll_offset, 0))
-        .block(Block::default().title(message_title).borders(Borders::ALL));
+        .block(
+            Block::default()
+                .title(message_title)
+                .borders(Borders::ALL)
+                .border_style(focus_border_style(message_focused)),
+        );
 
-    let composer = Paragraph::new(state.input.text.as_str())
-        .block(Block::default().title("Composer").borders(Borders::ALL));
+    let composer = Paragraph::new(state.input.text.as_str()).block(
+        Block::default()
+            .title("Composer")
+            .borders(Borders::ALL)
+            .border_style(focus_border_style(composer_focused)),
+    );
 
-    frame.render_stateful_widget(chat_list, columns[0], &mut chat_state);
-    frame.render_widget(message_view, columns[1]);
-    frame.render_widget(composer, rows[1]);
+    frame.render_stateful_widget(chat_list, layout.chat_list, &mut chat_state);
+    frame.render_widget(message_view, layout.messages);
+    frame.render_widget(composer, layout.composer);
 
     if state.draft_modal.is_open {
         draw_draft_modal(frame, state, area);
@@ -310,7 +369,8 @@ fn draw_draft_modal(frame: &mut Frame, state: &UiState, area: Rect) {
         .block(
             Block::default()
                 .title(state.draft_modal.title.as_str())
-                .borders(Borders::ALL),
+                .borders(Borders::ALL)
+                .border_style(focus_border_style(true)),
         );
 
     frame.render_widget(draft, modal_area);
@@ -331,8 +391,12 @@ fn draw_command_palette(frame: &mut Frame, state: &UiState, area: Rect) {
         format!("> {}", state.command_palette.query)
     };
 
-    let input =
-        Paragraph::new(query).block(Block::default().title("Command").borders(Borders::ALL));
+    let input = Paragraph::new(query).block(
+        Block::default()
+            .title("Command")
+            .borders(Borders::ALL)
+            .border_style(focus_border_style(true)),
+    );
     frame.render_widget(input, palette_chunks[0]);
 
     let action_items: Vec<ListItem> = if state.command_palette.items.is_empty() {
@@ -356,7 +420,12 @@ fn draw_command_palette(frame: &mut Frame, state: &UiState, area: Rect) {
     }
 
     let actions = List::new(action_items)
-        .block(Block::default().title("Actions").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title("Actions")
+                .borders(Borders::ALL)
+                .border_style(focus_border_style(true)),
+        )
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     frame.render_stateful_widget(actions, palette_chunks[1], &mut palette_state);
@@ -389,4 +458,21 @@ fn centered_rect(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
         .split(vertical_chunks[1]);
 
     horizontal_chunks[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_viewport_page_size_clamps_to_minimum() {
+        let area = Rect::new(0, 0, 10, 1);
+        assert_eq!(message_viewport_page_size(area), 1);
+    }
+
+    #[test]
+    fn message_viewport_page_size_reserves_composer_and_border() {
+        let area = Rect::new(0, 0, 10, 10);
+        assert_eq!(message_viewport_page_size(area), 5);
+    }
 }

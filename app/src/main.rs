@@ -1,5 +1,6 @@
 mod config;
 mod prompt;
+mod tui;
 mod ui_state;
 
 use std::io::{self, Write};
@@ -13,7 +14,6 @@ use telegram_llm_core::telegram::{
     AuthResult, CacheManager, QrLoginResult, SqliteCacheStore, TelegramBootstrap, TelegramConfig,
 };
 use time::{format_description, UtcOffset};
-use tokio::sync::broadcast::error::RecvError;
 use tracing::{info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -22,6 +22,7 @@ use tracing_subscriber::Layer;
 
 use crate::config::{AppConfig, LogFormat, LogRotation};
 use crate::prompt::{prompt_line, prompt_secret, AuthMethod};
+use crate::tui::run_tui_loop;
 use crate::ui_state::UiCacheBridge;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,6 +38,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::from_env()?;
     init_tracing(&config)?;
     info!("loaded configuration");
+    info!(keymap = ?config.keymap_style, "configured tui keymap");
 
     let cache_store = Arc::new(SqliteCacheStore::new(config.cache_db_path.clone()));
     let cache_manager = CacheManager::spawn(cache_store, config.cache_config()).await?;
@@ -69,28 +71,15 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("starting domain event stream");
     let event_stream = bootstrap.spawn_event_stream(config.update_buffer)?;
-    let mut event_rx = event_stream.subscribe();
+    let event_rx = event_stream.subscribe();
 
-    tokio::select! {
-        _ = async {
-            loop {
-                match event_rx.recv().await {
-                    Ok(event) => {
-                        cache_manager.apply_event(&event);
-                        ui_bridge.refresh(&cache_manager);
-                        info!(?event, "received domain event");
-                    }
-                    Err(RecvError::Lagged(_)) => {
-                        continue;
-                    }
-                    Err(RecvError::Closed) => break,
-                }
-            }
-        } => {}
-        _ = tokio::signal::ctrl_c() => {
-            info!("shutdown requested");
-        }
-    }
+    run_tui_loop(
+        &cache_manager,
+        &mut ui_bridge,
+        event_rx,
+        config.keymap_style,
+    )
+    .await?;
 
     event_stream.stop().await;
     cache_manager.shutdown().await;

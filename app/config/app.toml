@@ -48,3 +48,7 @@ rotation_max_size_mb = 1
 rotation_max_files = 20
 # Log Telegram and LLM content verbatim by default.
 log_content = true
+
+[ui]
+# Supported values: "vim", "vscode"
+keymap = "vscode"
