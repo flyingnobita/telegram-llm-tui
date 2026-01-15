@@ -95,6 +95,24 @@ mod tests {
         state
     }
 
+    fn state_with_single_message(body: &str) -> UiState {
+        let mut state = UiState::default();
+        state.chats = vec![ChatListItem {
+            id: 1,
+            title: "General".to_string(),
+            unread: 0,
+            is_selected: true,
+        }];
+        state.messages = vec![MessageItem {
+            id: 1,
+            author: "Ada".to_string(),
+            timestamp: "09:12".to_string(),
+            body: body.to_string(),
+        }];
+        state.message_view.cursor = Some(0);
+        state
+    }
+
     #[test]
     fn renders_layout_v1() {
         let state = sample_state();
@@ -134,5 +152,26 @@ mod tests {
         let rendered = render_to_string(&state, (80, 20));
 
         assert_snapshot!(rendered);
+    }
+
+    #[test]
+    fn clears_message_area_between_draws() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).expect("create test terminal");
+        let first_state = state_with_single_message("OLD-LINE-SHOULD-CLEAR");
+        let second_state = state_with_single_message("New message");
+
+        terminal
+            .draw(|frame| crate::view::draw(frame, &first_state))
+            .expect("render first frame");
+        terminal
+            .draw(|frame| crate::view::draw(frame, &second_state))
+            .expect("render second frame");
+
+        let rendered = buffer_to_string(terminal.backend().buffer());
+        assert!(
+            !rendered.contains("OLD-LINE-SHOULD-CLEAR"),
+            "expected cleared message area, got:\n{rendered}"
+        );
     }
 }
