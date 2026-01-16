@@ -555,14 +555,16 @@ mod tests {
 
     #[test]
     fn chat_list_max_scroll_respects_viewport() {
-        let mut state = UiState::default();
-        state.chat_list_viewport_width = 8;
-        state.chats = vec![ChatListItem {
-            id: 1,
-            title: "Long Chat Title".to_string(),
-            unread: 0,
-            is_selected: true,
-        }];
+        let state = UiState {
+            chat_list_viewport_width: 8,
+            chats: vec![ChatListItem {
+                id: 1,
+                title: "Long Chat Title".to_string(),
+                unread: 0,
+                is_selected: true,
+            }],
+            ..Default::default()
+        };
 
         assert_eq!(chat_list_max_scroll(&state), 7);
     }

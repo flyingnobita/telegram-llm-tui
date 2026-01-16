@@ -96,19 +96,21 @@ mod tests {
     }
 
     fn state_with_single_message(body: &str) -> UiState {
-        let mut state = UiState::default();
-        state.chats = vec![ChatListItem {
-            id: 1,
-            title: "General".to_string(),
-            unread: 0,
-            is_selected: true,
-        }];
-        state.messages = vec![MessageItem {
-            id: 1,
-            author: "Ada".to_string(),
-            timestamp: "09:12".to_string(),
-            body: body.to_string(),
-        }];
+        let mut state = UiState {
+            chats: vec![ChatListItem {
+                id: 1,
+                title: "General".to_string(),
+                unread: 0,
+                is_selected: true,
+            }],
+            messages: vec![MessageItem {
+                id: 1,
+                author: "Ada".to_string(),
+                timestamp: "09:12".to_string(),
+                body: body.to_string(),
+            }],
+            ..Default::default()
+        };
         state.message_view.cursor = Some(0);
         state
     }
