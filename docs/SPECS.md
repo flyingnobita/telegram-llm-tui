@@ -19,6 +19,14 @@
   lines.
 - Render message authors using display names (name or @username) when available.
 - Provide message pane horizontal scrolling with visible scrollbars.
+- Provide chat list pane vertical and horizontal scrollbars.
+- Use a reusable scrollable pane component for TUI panes (chat list, message
+  list, message composer, log window) that:
+  - supports vertical scrolling, optional horizontal scrolling, and optional
+    scrollbars per axis,
+  - clamps scroll offsets to computed max scroll values based on content and
+    viewport size,
+  - exposes viewport sizing and page size helpers used by the UI state.
 
 ### Non‑functional
 

@@ -70,9 +70,12 @@ notifications.
 2. [x] (3.2) Input ergonomics: vim or VSCode-style keymaps, scrollback,
    search in chat, message selection for LLM export, log window hotkey
    and scroll; runtime input loop wiring for keymaps and redraw.
-3. [ ] (3.3) Accessibility: color themes (light/dark/high-contrast),
+3. [x] (3.2.1) Reusable pane refactor: extract a reusable scrollable pane
+   component and rewire the message list, message composer, and log window to
+   use it.
+4. [ ] (3.3) Accessibility: color themes (light/dark/high-contrast),
    configurable keybindings, resize handling, mouse optional.
-4. [ ] (3.4) Notifications: status bar for connection state; optional desktop
+5. [ ] (3.4) Notifications: status bar for connection state; optional desktop
    notifications via feature flag.
 
 ## 4 LLM workflow

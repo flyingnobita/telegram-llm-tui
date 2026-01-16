@@ -1,6 +1,11 @@
 # Changes
 
 - Jan-16, 2026 - 11:00 PM +08 - Added `data/` to `.gitignore` to keep local cache/session files untracked.
+- Jan-16, 2026 - 10:24 PM +0800 - Added shared pane scrollbars to the chat
+  list and enabled horizontal scrolling for the log window.
+- Jan-16, 2026 - 09:49 PM +0800 - Refactored message, composer, and log panes to
+  use a shared scrollable pane module with unified scroll logic and scrollbars.
+- Jan-16, 2026 - 08:28 PM +0800 - Moved log dir to repo root.
 - Jan-16, 2026 - 04:39 PM +0800 - Moved history sync to the background so TUI starts.
 - Jan-16, 2026 - 04:26 PM +0800 - Added horizontal scrolling and scrollbars
   to the message pane.
