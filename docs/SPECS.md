@@ -10,6 +10,11 @@
 - Present LLM draft to the user for review/edit, then explicit send.
 - Operate as a terminal UI with keyboard-first navigation.
 - Provide message navigation ergonomics: keymaps, scrollback, search, and selection.
+- Provide a log window overlay toggled by a hotkey (default `l`) that is centered,
+  90 percent of the main window size, scrollable, and closed with Escape. The
+  log window shows the primary log file (`[logging].log_file`). Logs are not
+  shown in the main window, and it shows up to `[ui].log_window_max_lines`
+  lines.
 
 ### Non‑functional
 
@@ -17,7 +22,8 @@
 - Respect Telegram rate limits; never block the UI thread.
 - Logs are human-readable plain text; Telegram/LLM content logging is enabled
   by default.
-- Console output uses ANSI colors for readability; log files are non-ANSI.
+- Console output uses ANSI colors for readability; log files are non-ANSI. When
+  the TUI is active, console logging is suppressed to avoid corrupting the UI.
 - Log timestamps use local time with RFC 3339 offset.
 - Treat logs as sensitive data; do not log auth tokens.
 - Works on macOS first; Linux/Windows follow-up.

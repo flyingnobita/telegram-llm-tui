@@ -1,5 +1,15 @@
 # Changes
 
+- Jan-16, 2026 - 04:16 PM +0800 - Added `log_window_max_lines` to config for
+  the log window tail size.
+- Jan-16, 2026 - 04:10 PM +0800 - Loaded the log window from the primary log
+  file and refreshed it while the window is open.
+- Jan-16, 2026 - 04:06 PM +0800 - Switched the log window hotkey to `l` for
+  open and close behavior.
+- Jan-16, 2026 - 03:54 PM +0800 - Suppressed console logging while the TUI
+  runs to prevent screen corruption.
+- Jan-16, 2026 - 03:37 PM +0800 - Added a toggleable, scrollable log window
+  overlay with a default hotkey and escape close.
 - Jan-15, 2026 - 10:52 PM +0800 - Widened chat list and added scrolling.
 - Jan-15, 2026 - 10:27 PM +0800 - Synced dialog titles so chat list shows names.
 - Jan-15, 2026 - 09:54 PM +0800 - Cleared message pane before render.

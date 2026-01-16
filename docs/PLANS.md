@@ -66,8 +66,8 @@ notifications.
    modal for LLM-generated drafts; command palette for actions; runtime TUI
    loop in the app to render the layout.
 2. [x] (3.2) Input ergonomics: vim or VSCode-style keymaps, scrollback,
-   search in chat, message selection for LLM export; runtime input loop
-   wiring for keymaps and redraw.
+   search in chat, message selection for LLM export, log window hotkey
+   and scroll; runtime input loop wiring for keymaps and redraw.
 3. [ ] (3.3) Accessibility: color themes (light/dark/high-contrast),
    configurable keybindings, resize handling, mouse optional.
 4. [ ] (3.4) Notifications: status bar for connection state; optional desktop
