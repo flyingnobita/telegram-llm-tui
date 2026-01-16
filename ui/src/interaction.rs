@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::input::{handle_key as handle_text_key, InputState};
-use crate::view::{chat_list_max_scroll, ChatListItem, UiFocus, UiState};
+use crate::view::{chat_list_max_scroll, log_view_max_scroll, ChatListItem, UiFocus, UiState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum KeymapStyle {
@@ -11,6 +11,15 @@ pub enum KeymapStyle {
 }
 
 pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> bool {
+    if state.log_view.is_open {
+        return handle_log_view_key(state, key, style);
+    }
+
+    if key.code == KeyCode::Char('l') && key.modifiers == KeyModifiers::NONE {
+        state.log_view.is_open = true;
+        return true;
+    }
+
     if state.message_view.search.is_open && state.focus != UiFocus::Search {
         state.focus = UiFocus::Search;
     }
@@ -35,6 +44,68 @@ fn cycle_focus(state: &mut UiState) {
         UiFocus::Composer => UiFocus::Chats,
         UiFocus::Search => UiFocus::Messages,
     };
+}
+
+fn handle_log_view_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> bool {
+    match key {
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.log_view.is_open = false;
+            true
+        }
+        KeyEvent {
+            code: KeyCode::Char('l'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.log_view.is_open = false;
+            true
+        }
+        KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => scroll_log_view(state, -1),
+        KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => scroll_log_view(state, 1),
+        KeyEvent {
+            code: KeyCode::PageUp,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => scroll_log_view_page(state, -1),
+        KeyEvent {
+            code: KeyCode::PageDown,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => scroll_log_view_page(state, 1),
+        KeyEvent {
+            code: KeyCode::Home,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => jump_log_view(state, true),
+        KeyEvent {
+            code: KeyCode::End,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => jump_log_view(state, false),
+        KeyEvent {
+            code: KeyCode::Char('k'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } if style == KeymapStyle::Vim => scroll_log_view(state, -1),
+        KeyEvent {
+            code: KeyCode::Char('j'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } if style == KeymapStyle::Vim => scroll_log_view(state, 1),
+        _ => false,
+    }
 }
 
 fn handle_chats_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> bool {
@@ -334,6 +405,39 @@ fn scroll_by(state: &mut UiState, delta: i32) -> bool {
     true
 }
 
+fn scroll_log_view_page(state: &mut UiState, direction: i32) -> bool {
+    let page = state.log_view.page_size.max(1) as i32;
+    scroll_log_view_by(state, direction * page)
+}
+
+fn scroll_log_view(state: &mut UiState, delta: i32) -> bool {
+    scroll_log_view_by(state, delta)
+}
+
+fn scroll_log_view_by(state: &mut UiState, delta: i32) -> bool {
+    if state.logs.is_empty() {
+        return false;
+    }
+    let max_scroll = log_view_max_scroll(state) as i32;
+    let current = state.log_view.scroll_offset as i32;
+    let next = (current + delta).clamp(0, max_scroll) as usize;
+    if next == state.log_view.scroll_offset {
+        return false;
+    }
+    state.log_view.scroll_offset = next;
+    true
+}
+
+fn jump_log_view(state: &mut UiState, to_top: bool) -> bool {
+    let max_scroll = log_view_max_scroll(state);
+    let next = if to_top { 0 } else { max_scroll };
+    if next == state.log_view.scroll_offset {
+        return false;
+    }
+    state.log_view.scroll_offset = next;
+    true
+}
+
 fn toggle_message_selection(state: &mut UiState) -> bool {
     let Some(message_id) = state.message_view.cursor_message_id(&state.messages) else {
         return false;
@@ -371,7 +475,7 @@ fn scroll_chat_list(state: &mut UiState, delta: i32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view::{ChatListItem, MessageItem};
+    use crate::view::{ChatListItem, LogViewState, MessageItem};
 
     fn sample_state() -> UiState {
         let mut state = UiState {
@@ -538,5 +642,89 @@ mod tests {
             KeymapStyle::Vscode,
         );
         assert_eq!(state.chat_list_scroll, 0);
+    }
+
+    #[test]
+    fn opens_log_window_with_hotkey() {
+        let mut state = UiState::default();
+
+        let handled = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(handled);
+        assert!(state.log_view.is_open);
+    }
+
+    #[test]
+    fn closes_log_window_with_escape() {
+        let mut state = UiState::default();
+        state.log_view.is_open = true;
+
+        let handled = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(handled);
+        assert!(!state.log_view.is_open);
+    }
+
+    #[test]
+    fn closes_log_window_with_l() {
+        let mut state = UiState::default();
+        state.log_view.is_open = true;
+
+        let handled = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(handled);
+        assert!(!state.log_view.is_open);
+    }
+
+    #[test]
+    fn log_window_scrolls_with_keys() {
+        let mut state = UiState {
+            logs: vec![
+                "line-1".to_string(),
+                "line-2".to_string(),
+                "line-3".to_string(),
+                "line-4".to_string(),
+                "line-5".to_string(),
+            ],
+            log_view: LogViewState {
+                is_open: true,
+                page_size: 2,
+                ..LogViewState::default()
+            },
+            ..UiState::default()
+        };
+
+        handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.scroll_offset, 1);
+
+        handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.scroll_offset, 3);
+
+        handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.scroll_offset, 1);
     }
 }

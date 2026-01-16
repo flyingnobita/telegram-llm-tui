@@ -31,6 +31,7 @@ const DEFAULT_ROTATION_MAX_FILES: usize = 20;
 const DEFAULT_LOG_CONTENT: bool = true;
 const DEFAULT_KEYMAP_STYLE: KeymapStyle = KeymapStyle::Vscode;
 const DEFAULT_CHAT_LIST_WIDTH: u16 = 32;
+const DEFAULT_LOG_WINDOW_MAX_LINES: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
@@ -59,6 +60,7 @@ pub struct AppConfig {
     pub log_content: bool,
     pub keymap_style: KeymapStyle,
     pub chat_list_width: u16,
+    pub log_window_max_lines: usize,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -141,6 +143,7 @@ struct LoggingSection {
 struct UiSection {
     keymap: Option<String>,
     chat_list_width: Option<u16>,
+    log_window_max_lines: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -361,6 +364,13 @@ impl AppConfig {
             .unwrap_or(DEFAULT_CHAT_LIST_WIDTH);
         let chat_list_width = normalize_chat_list_width(chat_list_width);
 
+        let log_window_max_lines = file_config
+            .as_ref()
+            .and_then(|config| config.ui.as_ref())
+            .and_then(|ui| ui.log_window_max_lines)
+            .unwrap_or(DEFAULT_LOG_WINDOW_MAX_LINES);
+        let log_window_max_lines = normalize_log_window_max_lines(log_window_max_lines);
+
         Ok(Self {
             api_id,
             api_hash,
@@ -387,6 +397,7 @@ impl AppConfig {
             log_content,
             keymap_style,
             chat_list_width,
+            log_window_max_lines,
         })
     }
 
@@ -522,6 +533,14 @@ fn normalize_cache_flush_debounce_ms(value: u64) -> u64 {
 fn normalize_chat_list_width(value: u16) -> u16 {
     if value == 0 {
         DEFAULT_CHAT_LIST_WIDTH
+    } else {
+        value
+    }
+}
+
+fn normalize_log_window_max_lines(value: usize) -> usize {
+    if value == 0 {
+        DEFAULT_LOG_WINDOW_MAX_LINES
     } else {
         value
     }
@@ -952,6 +971,49 @@ mod tests {
 
         let config = result.unwrap();
         assert_eq!(config.chat_list_width, DEFAULT_CHAT_LIST_WIDTH);
+    }
+
+    #[test]
+    fn log_window_max_lines_defaults_when_missing() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-missing-ui-log-lines.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+
+        let config = AppConfig::from_env().unwrap();
+        assert_eq!(config.log_window_max_lines, DEFAULT_LOG_WINDOW_MAX_LINES);
+    }
+
+    #[test]
+    fn log_window_max_lines_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-lines.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[ui]\nlog_window_max_lines = 250\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.log_window_max_lines, 250);
+    }
+
+    #[test]
+    fn log_window_max_lines_uses_default_when_zero() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-lines-zero.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[ui]\nlog_window_max_lines = 0\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.log_window_max_lines, DEFAULT_LOG_WINDOW_MAX_LINES);
     }
 
     #[test]

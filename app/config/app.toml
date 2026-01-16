@@ -54,3 +54,5 @@ log_content = true
 keymap = "vscode"
 # Chat list width in columns. Set to 0 to use the default.
 chat_list_width = 32
+# Maximum number of log lines to show in the log window.
+log_window_max_lines = 500

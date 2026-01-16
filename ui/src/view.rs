@@ -176,6 +176,23 @@ pub struct CommandPaletteState {
 }
 
 #[derive(Debug, Clone)]
+pub struct LogViewState {
+    pub is_open: bool,
+    pub scroll_offset: usize,
+    pub page_size: usize,
+}
+
+impl Default for LogViewState {
+    fn default() -> Self {
+        Self {
+            is_open: false,
+            scroll_offset: 0,
+            page_size: 8,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct UiState {
     pub focus: UiFocus,
     pub input: InputState,
@@ -184,6 +201,8 @@ pub struct UiState {
     pub message_view: MessageViewState,
     pub draft_modal: DraftModalState,
     pub command_palette: CommandPaletteState,
+    pub logs: Vec<String>,
+    pub log_view: LogViewState,
     pub chat_list_width: u16,
     pub chat_list_scroll: usize,
     pub chat_list_viewport_width: u16,
@@ -199,6 +218,8 @@ impl Default for UiState {
             message_view: MessageViewState::default(),
             draft_modal: DraftModalState::default(),
             command_palette: CommandPaletteState::default(),
+            logs: Vec::new(),
+            log_view: LogViewState::default(),
             chat_list_width: DEFAULT_CHAT_LIST_WIDTH,
             chat_list_scroll: 0,
             chat_list_viewport_width: 0,
@@ -266,6 +287,12 @@ pub fn chat_list_max_scroll(state: &UiState) -> usize {
     max_label_len.saturating_sub(viewport_width)
 }
 
+pub fn log_view_max_scroll(state: &UiState) -> usize {
+    let page_size = state.log_view.page_size.max(1);
+    let line_count = state.logs.len().max(1);
+    line_count.saturating_sub(page_size)
+}
+
 fn clamp_chat_list_width(area_width: u16, desired: u16) -> u16 {
     if area_width <= 1 {
         return area_width.max(1);
@@ -289,7 +316,8 @@ fn is_message_focus(focus: UiFocus) -> bool {
 pub fn draw(frame: &mut Frame, state: &UiState) {
     let area = frame.size();
     let layout = layout_areas(area, state.chat_list_width);
-    let overlay_active = state.draft_modal.is_open || state.command_palette.is_open;
+    let overlay_active =
+        state.draft_modal.is_open || state.command_palette.is_open || state.log_view.is_open;
     let chat_focused = !overlay_active && state.focus == UiFocus::Chats;
     let message_focused = !overlay_active && is_message_focus(state.focus);
     let composer_focused = !overlay_active && state.focus == UiFocus::Composer;
@@ -360,6 +388,10 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
 
     if state.command_palette.is_open {
         draw_command_palette(frame, state, area);
+    }
+
+    if state.log_view.is_open {
+        draw_log_window(frame, state, area);
     }
 }
 
@@ -437,6 +469,36 @@ fn build_message_text(state: &UiState) -> (String, u16) {
     (lines.join("\n"), scroll_offset)
 }
 
+fn build_log_text(state: &UiState) -> (String, u16) {
+    if state.logs.is_empty() {
+        return ("No logs".to_string(), 0);
+    }
+
+    let max_scroll = log_view_max_scroll(state);
+    let scroll_offset = state
+        .log_view
+        .scroll_offset
+        .min(max_scroll)
+        .min(u16::MAX as usize) as u16;
+
+    (state.logs.join("\n"), scroll_offset)
+}
+
+fn draw_log_window(frame: &mut Frame, state: &UiState, area: Rect) {
+    let log_area = log_window_area(area);
+    frame.render_widget(Clear, log_area);
+
+    let (log_text, scroll_offset) = build_log_text(state);
+    let logs = Paragraph::new(log_text).scroll((scroll_offset, 0)).block(
+        Block::default()
+            .title("Logs")
+            .borders(Borders::ALL)
+            .border_style(focus_border_style(true)),
+    );
+
+    frame.render_widget(logs, log_area);
+}
+
 fn draw_draft_modal(frame: &mut Frame, state: &UiState, area: Rect) {
     let modal_area = centered_rect(area, 70, 60);
     frame.render_widget(Clear, modal_area);
@@ -506,6 +568,16 @@ fn draw_command_palette(frame: &mut Frame, state: &UiState, area: Rect) {
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     frame.render_stateful_widget(actions, palette_chunks[1], &mut palette_state);
+}
+
+pub fn log_window_page_size(area: Rect) -> usize {
+    let log_area = log_window_area(area);
+    let inner = Block::default().borders(Borders::ALL).inner(log_area);
+    inner.height.max(1) as usize
+}
+
+fn log_window_area(area: Rect) -> Rect {
+    centered_rect(area, 90, 90)
 }
 
 fn centered_rect(area: Rect, percent_x: u16, percent_y: u16) -> Rect {

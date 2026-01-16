@@ -5,6 +5,7 @@ mod ui_state;
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -37,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     let config = AppConfig::from_env()?;
-    init_tracing(&config)?;
+    let console_gate = init_tracing(&config)?;
     info!("loaded configuration");
     info!(
         keymap = ?config.keymap_style,
@@ -95,6 +96,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         &mut ui_bridge,
         event_rx,
         config.keymap_style,
+        console_gate.clone(),
+        config.log_file_path.clone(),
+        config.log_window_max_lines,
     )
     .await?;
 
@@ -117,7 +121,7 @@ async fn sync_dialog_summaries(
     Ok(count)
 }
 
-fn init_tracing(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
+fn init_tracing(config: &AppConfig) -> Result<ConsoleLogGate, Box<dyn std::error::Error>> {
     ensure_parent_dir(&config.log_file_path)?;
     ensure_parent_dir(&config.error_log_path)?;
 
@@ -136,6 +140,7 @@ fn init_tracing(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
 
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(level_filter_directive(config.log_level)));
+    let console_gate = ConsoleLogGate::new();
     match config.log_format {
         LogFormat::Plain => {
             let stdout_timer = build_timer();
@@ -143,6 +148,7 @@ fn init_tracing(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
             let error_timer = build_timer();
             let stdout_layer = tracing_subscriber::fmt::layer()
                 .compact()
+                .with_writer(console_gate.make_writer())
                 .with_ansi(true)
                 .with_timer(stdout_timer)
                 .with_filter(filter.clone());
@@ -166,7 +172,7 @@ fn init_tracing(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
                 .init();
         }
     }
-    Ok(())
+    Ok(console_gate)
 }
 
 fn level_filter_directive(level: tracing_subscriber::filter::LevelFilter) -> &'static str {
@@ -251,6 +257,82 @@ impl Write for SharedWriterGuard<'_> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
+        self.guard.flush()
+    }
+}
+
+#[derive(Clone)]
+pub struct ConsoleLogGate {
+    enabled: Arc<AtomicBool>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+}
+
+impl ConsoleLogGate {
+    fn new() -> Self {
+        Self {
+            enabled: Arc::new(AtomicBool::new(true)),
+            writer: Arc::new(Mutex::new(Box::new(io::stdout()))),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_writer(writer: Box<dyn Write + Send>) -> Self {
+        Self {
+            enabled: Arc::new(AtomicBool::new(true)),
+            writer: Arc::new(Mutex::new(writer)),
+        }
+    }
+
+    fn make_writer(&self) -> GatedWriter {
+        GatedWriter {
+            enabled: self.enabled.clone(),
+            writer: self.writer.clone(),
+        }
+    }
+
+    pub fn disable(&self) {
+        self.enabled.store(false, Ordering::Relaxed);
+    }
+
+    pub fn enable(&self) {
+        self.enabled.store(true, Ordering::Relaxed);
+    }
+}
+
+#[derive(Clone)]
+struct GatedWriter {
+    enabled: Arc<AtomicBool>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for GatedWriter {
+    type Writer = GatedWriterGuard<'a>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        GatedWriterGuard {
+            enabled: self.enabled.clone(),
+            guard: self.writer.lock().unwrap(),
+        }
+    }
+}
+
+struct GatedWriterGuard<'a> {
+    enabled: Arc<AtomicBool>,
+    guard: MutexGuard<'a, Box<dyn Write + Send>>,
+}
+
+impl Write for GatedWriterGuard<'_> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if !self.enabled.load(Ordering::Relaxed) {
+            return Ok(buf.len());
+        }
+        self.guard.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if !self.enabled.load(Ordering::Relaxed) {
+            return Ok(());
+        }
         self.guard.flush()
     }
 }
@@ -421,5 +503,50 @@ async fn run_qr_login(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tracing_subscriber::fmt::MakeWriter;
+
+    struct BufferWriter {
+        buffer: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl Write for BufferWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.buffer.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn console_log_gate_suppresses_output_when_disabled() {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let writer = BufferWriter {
+            buffer: buffer.clone(),
+        };
+        let gate = ConsoleLogGate::with_writer(Box::new(writer));
+        let make_writer = gate.make_writer();
+
+        {
+            let mut guard = make_writer.make_writer();
+            guard.write_all(b"visible").unwrap();
+        }
+        assert_eq!(buffer.lock().unwrap().as_slice(), b"visible");
+
+        gate.disable();
+        {
+            let mut guard = make_writer.make_writer();
+            guard.write_all(b"hidden").unwrap();
+        }
+        assert_eq!(buffer.lock().unwrap().as_slice(), b"visible");
     }
 }

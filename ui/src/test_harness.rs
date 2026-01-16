@@ -115,6 +115,16 @@ mod tests {
         state
     }
 
+    fn sample_logs() -> Vec<String> {
+        vec![
+            "2026-01-16T09:12:01+00:00 INFO app: booted".to_string(),
+            "2026-01-16T09:12:02+00:00 WARN core: slow network".to_string(),
+            "2026-01-16T09:12:03+00:00 INFO ui: render tick".to_string(),
+            "2026-01-16T09:12:04+00:00 ERROR app: failed to sync".to_string(),
+            "2026-01-16T09:12:05+00:00 INFO ui: redraw".to_string(),
+        ]
+    }
+
     #[test]
     fn renders_layout_v1() {
         let state = sample_state();
@@ -150,6 +160,17 @@ mod tests {
             title: "LLM Draft".to_string(),
             body: "Here is a draft response that needs review.".to_string(),
         };
+
+        let rendered = render_to_string(&state, (80, 20));
+
+        assert_snapshot!(rendered);
+    }
+
+    #[test]
+    fn renders_log_window() {
+        let mut state = sample_state();
+        state.logs = sample_logs();
+        state.log_view.is_open = true;
 
         let rendered = render_to_string(&state, (80, 20));
 
