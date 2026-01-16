@@ -18,6 +18,8 @@ send_retry_max_attempts = 0
 send_retry_base_delay_ms = 500
 # Max retry delay in milliseconds for non-rate-limit errors.
 send_retry_max_delay_ms = 30000
+# Max number of recent messages to fetch per chat on startup.
+history_per_chat = 100
 
 [telegram.cache]
 # Cache database path. Relative paths resolve from repo root.
@@ -33,9 +35,9 @@ flush_debounce_ms = 500
 
 [logging]
 # Primary app log file path. Relative paths resolve from repo root.
-log_file = "data/logs/app.log"
+log_file = "logs/app.log"
 # Error log file path. Relative paths resolve from repo root.
-error_log_file = "data/logs/app-error.log"
+error_log_file = "logs/app-error.log"
 # Log level for stdout. Supported: "error", "warn", "info", "debug", "trace".
 level = "info"
 # Log format. Supported: "plain".

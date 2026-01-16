@@ -12,10 +12,12 @@ use std::time::Duration;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use telegram_llm_core::telegram::{
-    fetch_dialog_summaries, AuthResult, CacheManager, CachedUser, ChatPeerKind, QrLoginResult,
-    SqliteCacheStore, TelegramBootstrap, TelegramConfig, UserId,
+    fetch_dialogs, fetch_recent_messages, AuthResult, CacheManager, CachedUser, ChatPeerKind,
+    DomainEvent, QrLoginResult, SqliteCacheStore, TelegramBootstrap, TelegramClient,
+    TelegramConfig, UserId,
 };
 use time::{format_description, UtcOffset};
+use tokio::sync::mpsc;
 use tracing::{info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -47,9 +49,9 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let cache_store = Arc::new(SqliteCacheStore::new(config.cache_db_path.clone()));
-    let cache_manager = CacheManager::spawn(cache_store, config.cache_config()).await?;
+    let cache_manager = Arc::new(CacheManager::spawn(cache_store, config.cache_config()).await?);
     let mut ui_bridge = UiCacheBridge::new(None, config.chat_list_width);
-    ui_bridge.refresh(&cache_manager);
+    ui_bridge.refresh(cache_manager.as_ref());
 
     let mut telegram_config = TelegramConfig::new(
         config.api_id,
@@ -75,26 +77,81 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         info!("already authorized");
     }
 
-    match sync_dialog_summaries(&bootstrap, &cache_manager).await {
-        Ok(count) => {
+    let (cache_refresh_tx, cache_refresh_rx) = mpsc::unbounded_channel();
+    let dialogs = match fetch_dialogs(bootstrap.client()).await {
+        Ok(dialogs) => {
+            let count = dialogs.len();
+            for dialog in &dialogs {
+                let summary = &dialog.summary;
+                if summary.peer_kind == ChatPeerKind::User {
+                    let fallback = format!("Chat {}", summary.chat_id.0);
+                    if summary.title.trim() != fallback {
+                        cache_manager.upsert_user(CachedUser {
+                            user_id: UserId(summary.chat_id.0),
+                            display_name: summary.title.clone(),
+                        });
+                    }
+                }
+                cache_manager.upsert_chat(summary.clone());
+            }
             info!(count, "synced dialog summaries");
             if count > 0 {
-                ui_bridge.refresh(&cache_manager);
+                ui_bridge.refresh(cache_manager.as_ref());
             }
+            Some(dialogs)
         }
         Err(err) => {
             warn!(error = %err, "failed to sync dialog summaries");
+            None
         }
-    }
+    };
 
     info!("starting domain event stream");
     let event_stream = bootstrap.spawn_event_stream(config.update_buffer)?;
     let event_rx = event_stream.subscribe();
 
+    let history_limit =
+        effective_history_limit(config.history_per_chat, config.cache_max_messages_per_chat);
+    let history_handle = if let Some(dialogs) = dialogs {
+        if history_limit == 0 {
+            None
+        } else {
+            let client = bootstrap.client().clone();
+            let cache_manager = Arc::clone(&cache_manager);
+            let cache_refresh_tx = cache_refresh_tx.clone();
+            Some(tokio::spawn(async move {
+                match sync_dialogs_and_history(
+                    &client,
+                    cache_manager.as_ref(),
+                    dialogs,
+                    history_limit,
+                    cache_refresh_tx,
+                )
+                .await
+                {
+                    Ok(stats) => {
+                        info!(
+                            dialogs = stats.dialog_count,
+                            messages = stats.message_count,
+                            history_limit,
+                            "synced dialog history"
+                        );
+                    }
+                    Err(err) => {
+                        warn!(error = %err, "failed to sync dialog history");
+                    }
+                }
+            }))
+        }
+    } else {
+        None
+    };
+
     run_tui_loop(
-        &cache_manager,
+        cache_manager.as_ref(),
         &mut ui_bridge,
         event_rx,
+        cache_refresh_rx,
         config.keymap_style,
         console_gate.clone(),
         config.log_file_path.clone(),
@@ -102,32 +159,74 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
+    if let Some(handle) = history_handle {
+        handle.abort();
+        let _ = handle.await;
+    }
+
     event_stream.stop().await;
+    let cache_manager =
+        Arc::try_unwrap(cache_manager).expect("cache manager still shared during shutdown");
     cache_manager.shutdown().await;
     bootstrap.shutdown().await;
     info!("shutdown complete");
     Ok(())
 }
 
-async fn sync_dialog_summaries(
-    bootstrap: &TelegramBootstrap,
+struct HistorySyncStats {
+    dialog_count: usize,
+    message_count: usize,
+}
+
+async fn sync_dialogs_and_history(
+    client: &TelegramClient,
     cache_manager: &CacheManager,
-) -> telegram_llm_core::telegram::Result<usize> {
-    let summaries = fetch_dialog_summaries(bootstrap.client()).await?;
-    let count = summaries.len();
-    for summary in summaries {
-        if summary.peer_kind == ChatPeerKind::User {
-            let fallback = format!("Chat {}", summary.chat_id.0);
-            if summary.title.trim() != fallback {
-                cache_manager.upsert_user(CachedUser {
-                    user_id: UserId(summary.chat_id.0),
-                    display_name: summary.title.clone(),
-                });
+    dialogs: Vec<telegram_llm_core::telegram::DialogSnapshot>,
+    history_limit: usize,
+    cache_refresh_tx: mpsc::UnboundedSender<()>,
+) -> telegram_llm_core::telegram::Result<HistorySyncStats> {
+    let dialog_count = dialogs.len();
+    let mut message_count = 0;
+
+    for dialog in dialogs {
+        let summary = dialog.summary;
+        let chat_id = summary.chat_id;
+        let title = summary.title.clone();
+        if history_limit == 0 {
+            continue;
+        }
+
+        match fetch_recent_messages(client, dialog.peer, history_limit).await {
+            Ok(messages) => {
+                message_count += messages.len();
+                for message in messages {
+                    cache_manager.apply_event(&DomainEvent::MessageNew(message));
+                }
+                let _ = cache_refresh_tx.send(());
+            }
+            Err(err) => {
+                warn!(
+                    chat_id = chat_id.0,
+                    title = %title,
+                    error = %err,
+                    "failed to fetch message history for chat"
+                );
             }
         }
-        cache_manager.upsert_chat(summary);
     }
-    Ok(count)
+
+    Ok(HistorySyncStats {
+        dialog_count,
+        message_count,
+    })
+}
+
+fn effective_history_limit(history_per_chat: usize, cache_max_messages_per_chat: usize) -> usize {
+    if cache_max_messages_per_chat == 0 {
+        history_per_chat
+    } else {
+        history_per_chat.min(cache_max_messages_per_chat)
+    }
 }
 
 fn init_tracing(config: &AppConfig) -> Result<ConsoleLogGate, Box<dyn std::error::Error>> {

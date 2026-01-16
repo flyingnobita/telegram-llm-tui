@@ -37,6 +37,7 @@ pub async fn run_tui_loop(
     cache_manager: &CacheManager,
     ui_bridge: &mut UiCacheBridge,
     mut event_rx: EventReceiver,
+    mut cache_refresh_rx: mpsc::UnboundedReceiver<()>,
     keymap: KeymapStyle,
     console_gate: ConsoleLogGate,
     log_path: PathBuf,
@@ -81,6 +82,13 @@ pub async fn run_tui_loop(
                     Err(RecvError::Closed) => {
                         should_exit = true;
                     }
+                }
+            }
+            refresh = cache_refresh_rx.recv() => {
+                if refresh.is_none() {
+                    should_exit = true;
+                } else {
+                    ui_bridge.refresh(cache_manager);
                 }
             }
             _ = tokio::signal::ctrl_c() => {

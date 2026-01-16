@@ -55,6 +55,8 @@ persistence.
    support text, reply, edit, delete; queue unsent messages when offline.
 4. [x] (2.4) Add minimal persistence for chat metadata and message cache to
    reduce network round-trips; keep caches small and pluggable.
+5. [ ] (2.5) Bootstrap recent message history on startup for all chats (default
+   100 per chat, cached).
 
 ## 3 TUI experience
 
@@ -100,7 +102,7 @@ meaningful coverage. **Sub-feature ordering:** Domain tests -> UI snapshot tests
 2. [ ] (5.2) Snapshot tests for UI rendering (ratatui) using `insta` with
    deterministic data.
 3. [ ] (5.3) Tracing or logging with `tracing` + `tracing-subscriber`;
-   human-readable logs to `data/logs/app.log`; size-based rotation at 1 MB with
+   human-readable logs to `logs/app.log`; size-based rotation at 1 MB with
    20 files; toggle verbosity at runtime.
 4. [ ] (5.4) Developer commands: `cargo xtask dev-env` to run a local config
    wizard and start the app.

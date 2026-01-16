@@ -4,8 +4,10 @@
 
 ### Functional
 
-- Authenticate to Telegram (MTProto via grammers) and sync chats/messages.
+- Authenticate to Telegram (MTProto via grammers) and sync chat summaries plus
+  recent message history on startup (default 100 per chat, configurable).
 - Read chats and send messages (text to start; replies/edits as MVP+).
+- Render service messages with placeholder text in history views.
 - Export selected chat context to LLM for analysis and draft responses.
 - Present LLM draft to the user for review/edit, then explicit send.
 - Operate as a terminal UI with keyboard-first navigation.
@@ -45,4 +47,3 @@
 - User can log in, select a chat, read history, and send a message.
 - User can select messages, generate an LLM draft, edit it, and send.
 - App recovers from temporary disconnect without losing drafts.
-- Render service messages with placeholder text in history views.

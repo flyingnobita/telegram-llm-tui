@@ -13,11 +13,12 @@ const DEFAULT_SESSION_PATH: &str = "data/telegram.session";
 const DEFAULT_UPDATE_BUFFER: usize = 1024;
 const DEFAULT_AUTH_METHOD: AuthMethod = AuthMethod::Phone;
 const DEFAULT_CONFIG_PATH: &str = "app/config/app.toml";
-const DEFAULT_LOG_FILE_PATH: &str = "data/logs/app.log";
-const DEFAULT_ERROR_LOG_PATH: &str = "data/logs/app-error.log";
+const DEFAULT_LOG_FILE_PATH: &str = "logs/app.log";
+const DEFAULT_ERROR_LOG_PATH: &str = "logs/app-error.log";
 const DEFAULT_SEND_QUEUE_LIMIT: usize = 256;
 const DEFAULT_SEND_RETRY_BASE_DELAY_MS: u64 = 500;
 const DEFAULT_SEND_RETRY_MAX_DELAY_MS: u64 = 30_000;
+const DEFAULT_HISTORY_PER_CHAT: usize = 100;
 const DEFAULT_CACHE_DB_PATH: &str = "data/cache.sqlite";
 const DEFAULT_CACHE_MAX_CHATS: usize = 0;
 const DEFAULT_CACHE_MAX_MESSAGES_PER_CHAT: usize = 5000;
@@ -43,6 +44,7 @@ pub struct AppConfig {
     pub send_retry_max_attempts: Option<u32>,
     pub send_retry_base_delay_ms: u64,
     pub send_retry_max_delay_ms: u64,
+    pub history_per_chat: usize,
     pub phone_number: Option<String>,
     pub auth_method: AuthMethod,
     pub cache_db_path: PathBuf,
@@ -115,6 +117,7 @@ struct TelegramSection {
     send_retry_max_attempts: Option<u32>,
     send_retry_base_delay_ms: Option<u64>,
     send_retry_max_delay_ms: Option<u64>,
+    history_per_chat: Option<usize>,
     cache: Option<CacheSection>,
 }
 
@@ -214,6 +217,13 @@ impl AppConfig {
             .and_then(|telegram| telegram.send_retry_max_delay_ms)
             .unwrap_or(DEFAULT_SEND_RETRY_MAX_DELAY_MS);
         let send_retry_max_delay_ms = send_retry_max_delay_ms.max(send_retry_base_delay_ms);
+
+        let history_per_chat = file_config
+            .as_ref()
+            .and_then(|config| config.telegram.as_ref())
+            .and_then(|telegram| telegram.history_per_chat)
+            .unwrap_or(DEFAULT_HISTORY_PER_CHAT);
+        let history_per_chat = normalize_history_per_chat(history_per_chat);
 
         let cache_db_path = file_config
             .as_ref()
@@ -380,6 +390,7 @@ impl AppConfig {
             send_retry_max_attempts,
             send_retry_base_delay_ms,
             send_retry_max_delay_ms,
+            history_per_chat,
             phone_number,
             auth_method,
             cache_db_path,
@@ -511,6 +522,14 @@ fn normalize_send_retry_attempts(value: u32) -> Option<u32> {
         None
     } else {
         Some(value)
+    }
+}
+
+fn normalize_history_per_chat(value: usize) -> usize {
+    if value == 0 {
+        DEFAULT_HISTORY_PER_CHAT
+    } else {
+        value
     }
 }
 
@@ -721,6 +740,49 @@ mod tests {
     }
 
     #[test]
+    fn history_per_chat_defaults_when_missing() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-missing-history.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+
+        let config = AppConfig::from_env().unwrap();
+        assert_eq!(config.history_per_chat, DEFAULT_HISTORY_PER_CHAT);
+    }
+
+    #[test]
+    fn history_per_chat_reads_from_config_file() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-history-config.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[telegram]\nhistory_per_chat = 250\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.history_per_chat, 250);
+    }
+
+    #[test]
+    fn history_per_chat_uses_default_when_zero() {
+        let _lock = env_lock().lock().unwrap();
+        let (_id, _hash) = set_required_env();
+
+        let temp_path = std::env::temp_dir().join("telegram-llm-tui-history-zero.toml");
+        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
+        std::fs::write(&temp_path, "[telegram]\nhistory_per_chat = 0\n").unwrap();
+
+        let result = AppConfig::from_env();
+        let _ = std::fs::remove_file(&temp_path);
+
+        let config = result.unwrap();
+        assert_eq!(config.history_per_chat, DEFAULT_HISTORY_PER_CHAT);
+    }
+
+    #[test]
     fn phone_number_reads_from_env() {
         let _lock = env_lock().lock().unwrap();
         let (_id, _hash) = set_required_env();
@@ -778,7 +840,7 @@ mod tests {
         let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
         std::fs::write(
             &temp_path,
-            "[logging]\nerror_log_file = \"data/logs/test-error.log\"\n",
+            "[logging]\nerror_log_file = \"logs/test-error.log\"\n",
         )
         .unwrap();
 
@@ -787,7 +849,7 @@ mod tests {
 
         let config = result.unwrap();
         let path = config.error_log_path.to_string_lossy();
-        assert!(path.ends_with("data/logs/test-error.log"));
+        assert!(path.ends_with("logs/test-error.log"));
     }
 
     #[test]

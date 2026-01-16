@@ -1,10 +1,12 @@
 # Changes
 
+- Jan-16, 2026 - 04:39 PM +0800 - Moved history sync to the background so TUI starts.
 - Jan-16, 2026 - 04:26 PM +0800 - Added horizontal scrolling and scrollbars
   to the message pane.
 - Jan-16, 2026 - 04:24 PM +0800 - Rendered service messages instead of warnings.
 - Jan-16, 2026 - 04:09 PM +0800 - Fixed message pane scrolling for
   multi-line messages so long bodies can be viewed.
+- Jan-16, 2026 - 04:02 PM +0800 - Added startup history sync (default 100 per chat).
 - Jan-16, 2026 - 03:49 PM +0800 - Cached user display names so message
   authors render by name instead of raw IDs.
 - Jan-16, 2026 - 03:37 PM +0800 - Added a toggleable, scrollable log window

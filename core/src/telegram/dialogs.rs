@@ -1,4 +1,5 @@
 use grammers_client::Client;
+use grammers_session::defs::PeerRef;
 use grammers_session::defs::{PeerId, PeerKind};
 use grammers_tl_types as tl;
 
@@ -6,9 +7,15 @@ use crate::telegram::cache::{ChatPeerKind, ChatSummary};
 use crate::telegram::error::Result;
 use crate::telegram::events::{ChatId, MessageId};
 
-pub async fn fetch_dialog_summaries(client: &Client) -> Result<Vec<ChatSummary>> {
+#[derive(Debug, Clone)]
+pub struct DialogSnapshot {
+    pub summary: ChatSummary,
+    pub peer: PeerRef,
+}
+
+pub async fn fetch_dialogs(client: &Client) -> Result<Vec<DialogSnapshot>> {
     let mut dialogs = client.iter_dialogs();
-    let mut summaries = Vec::new();
+    let mut snapshots = Vec::new();
 
     while let Some(dialog) = dialogs.next().await? {
         if matches!(dialog.raw, tl::enums::Dialog::Folder(_)) {
@@ -37,17 +44,28 @@ pub async fn fetch_dialog_summaries(client: &Client) -> Result<Vec<ChatSummary>>
             tl::enums::Dialog::Folder(_) => None,
         };
 
-        summaries.push(ChatSummary {
-            chat_id,
-            title,
-            peer_kind,
-            last_message_id,
-            last_message_at,
-            unread_count,
+        snapshots.push(DialogSnapshot {
+            summary: ChatSummary {
+                chat_id,
+                title,
+                peer_kind,
+                last_message_id,
+                last_message_at,
+                unread_count,
+            },
+            peer: PeerRef::from(peer),
         });
     }
 
-    Ok(summaries)
+    Ok(snapshots)
+}
+
+pub async fn fetch_dialog_summaries(client: &Client) -> Result<Vec<ChatSummary>> {
+    let snapshots = fetch_dialogs(client).await?;
+    Ok(snapshots
+        .into_iter()
+        .map(|snapshot| snapshot.summary)
+        .collect())
 }
 
 fn resolve_chat_title(name: Option<&str>, username: Option<&str>, chat_id: ChatId) -> String {
