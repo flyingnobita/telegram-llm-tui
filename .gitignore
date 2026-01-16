@@ -1,7 +1,8 @@
 # Rust
 /target/
 **/*.rs.bk
-data/
+data/logs/*
+session to avoid re-login
 
 # Env files (dev-only secrets)
 .env
