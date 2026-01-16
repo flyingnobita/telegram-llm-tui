@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS messages (
     outgoing INTEGER NOT NULL,
     PRIMARY KEY (chat_id, message_id)
 );
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    display_name TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id);
 CREATE INDEX IF NOT EXISTS idx_messages_chat_timestamp ON messages(chat_id, timestamp);
 "#;
@@ -99,6 +103,12 @@ pub struct CachedMessage {
     pub outgoing: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CachedUser {
+    pub user_id: UserId,
+    pub display_name: String,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct CacheLimits {
     pub max_chats: usize,
@@ -117,6 +127,7 @@ pub struct CacheConfig {
 pub struct CacheSnapshot {
     pub chats: Vec<ChatSummary>,
     pub messages: Vec<CachedMessage>,
+    pub users: Vec<CachedUser>,
 }
 
 pub trait CacheStore: Send + Sync {
@@ -145,6 +156,20 @@ pub trait CacheStore: Send + Sync {
             *existing = message.clone();
         } else {
             snapshot.messages.push(message.clone());
+        }
+        self.save(&snapshot)
+    }
+
+    fn upsert_user(&self, user: &CachedUser) -> Result<()> {
+        let mut snapshot = self.load()?;
+        if let Some(existing) = snapshot
+            .users
+            .iter_mut()
+            .find(|entry| entry.user_id == user.user_id)
+        {
+            *existing = user.clone();
+        } else {
+            snapshot.users.push(user.clone());
         }
         self.save(&snapshot)
     }
@@ -187,6 +212,7 @@ impl CacheStore for SqliteCacheStore {
         let connection = self.open_connection()?;
         let mut chats = Vec::new();
         let mut messages = Vec::new();
+        let mut users = Vec::new();
 
         let mut chat_stmt = connection.prepare(
             "SELECT chat_id, title, peer_kind, last_message_id, last_message_at, unread_count, updated_at FROM chats",
@@ -233,7 +259,22 @@ impl CacheStore for SqliteCacheStore {
             });
         }
 
-        Ok(CacheSnapshot { chats, messages })
+        let mut user_stmt =
+            connection.prepare("SELECT user_id, display_name FROM users ORDER BY user_id")?;
+        while let State::Row = user_stmt.next()? {
+            let user_id = UserId(user_stmt.read::<i64, _>(0)?);
+            let display_name = user_stmt.read::<String, _>(1)?;
+            users.push(CachedUser {
+                user_id,
+                display_name,
+            });
+        }
+
+        Ok(CacheSnapshot {
+            chats,
+            messages,
+            users,
+        })
     }
 
     fn save(&self, snapshot: &CacheSnapshot) -> Result<()> {
@@ -241,6 +282,7 @@ impl CacheStore for SqliteCacheStore {
         connection.execute("BEGIN IMMEDIATE TRANSACTION")?;
         connection.execute("DELETE FROM messages")?;
         connection.execute("DELETE FROM chats")?;
+        connection.execute("DELETE FROM users")?;
 
         {
             let mut chat_stmt = connection.prepare(
@@ -287,6 +329,20 @@ impl CacheStore for SqliteCacheStore {
                 ])?;
                 let _ = message_stmt.next()?;
                 message_stmt.reset()?;
+            }
+        }
+
+        {
+            let mut user_stmt = connection.prepare(
+                "INSERT INTO users (user_id, display_name) VALUES (:user_id, :display_name)",
+            )?;
+            for user in &snapshot.users {
+                user_stmt.bind_iter::<_, (_, Value)>([
+                    (":user_id", (user.user_id.0).into()),
+                    (":display_name", user.display_name.clone().into()),
+                ])?;
+                let _ = user_stmt.next()?;
+                user_stmt.reset()?;
             }
         }
 
@@ -360,6 +416,15 @@ impl CacheManager {
         let _ = self.flush_tx.send(FlushCommand::Dirty);
     }
 
+    pub fn upsert_user(&self, user: CachedUser) {
+        let mut cache = match self.inner.write() {
+            Ok(cache) => cache,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        cache.upsert_user(user);
+        let _ = self.flush_tx.send(FlushCommand::Dirty);
+    }
+
     pub fn chat_summaries(&self) -> Vec<ChatSummary> {
         let cache = self.inner.read().map(|cache| cache.chat_summaries());
         cache.unwrap_or_default()
@@ -370,6 +435,17 @@ impl CacheManager {
             .inner
             .read()
             .map(|cache| cache.messages_for_chat(chat_id, limit));
+        cache.unwrap_or_default()
+    }
+
+    pub fn user_display_names<I>(&self, user_ids: I) -> HashMap<UserId, String>
+    where
+        I: IntoIterator<Item = UserId>,
+    {
+        let cache = self
+            .inner
+            .read()
+            .map(|cache| cache.user_display_names(user_ids));
         cache.unwrap_or_default()
     }
 
@@ -403,6 +479,7 @@ struct ChatEntry {
 #[derive(Debug)]
 pub struct ChatCache {
     chats: HashMap<ChatId, ChatEntry>,
+    users: HashMap<UserId, CachedUser>,
     limits: CacheLimits,
     current_bytes: usize,
 }
@@ -411,6 +488,7 @@ impl ChatCache {
     pub fn new(limits: CacheLimits) -> Self {
         Self {
             chats: HashMap::new(),
+            users: HashMap::new(),
             limits,
             current_bytes: 0,
         }
@@ -424,6 +502,9 @@ impl ChatCache {
         for message in snapshot.messages {
             cache.insert_message(message);
         }
+        for user in snapshot.users {
+            cache.insert_user(user);
+        }
         let _ = cache.enforce_limits();
         cache
     }
@@ -435,11 +516,17 @@ impl ChatCache {
     pub fn snapshot(&self) -> CacheSnapshot {
         let mut chats = Vec::with_capacity(self.chats.len());
         let mut messages = Vec::new();
+        let mut users = Vec::new();
         for entry in self.chats.values() {
             chats.push(entry.summary.clone());
             messages.extend(entry.messages.iter().cloned());
         }
-        CacheSnapshot { chats, messages }
+        users.extend(self.users.values().cloned());
+        CacheSnapshot {
+            chats,
+            messages,
+            users,
+        }
     }
 
     pub fn chat_summaries(&self) -> Vec<ChatSummary> {
@@ -472,6 +559,9 @@ impl ChatCache {
     pub fn apply_event(&mut self, event: &DomainEvent) -> EvictionStats {
         match event {
             DomainEvent::MessageNew(message) => {
+                if let Some(name) = message.author_name.as_deref() {
+                    self.upsert_user_name(message.author_id, name);
+                }
                 let cached = CachedMessage {
                     chat_id: message.chat_id,
                     message_id: message.message_id,
@@ -484,6 +574,9 @@ impl ChatCache {
                 self.insert_message(cached);
             }
             DomainEvent::MessageEdited(message) => {
+                if let Some(name) = message.editor_name.as_deref() {
+                    self.upsert_user_name(message.editor_id, name);
+                }
                 self.update_message(
                     message.chat_id,
                     message.message_id,
@@ -507,6 +600,29 @@ impl ChatCache {
         self.enforce_limits()
     }
 
+    pub fn upsert_user(&mut self, user: CachedUser) {
+        self.insert_user(user);
+    }
+
+    pub fn user_display_name(&self, user_id: UserId) -> Option<String> {
+        self.users
+            .get(&user_id)
+            .map(|user| user.display_name.clone())
+    }
+
+    pub fn user_display_names<I>(&self, user_ids: I) -> HashMap<UserId, String>
+    where
+        I: IntoIterator<Item = UserId>,
+    {
+        let mut names = HashMap::new();
+        for user_id in user_ids {
+            if let Some(name) = self.user_display_name(user_id) {
+                names.insert(user_id, name);
+            }
+        }
+        names
+    }
+
     fn insert_chat(&mut self, summary: ChatSummary) {
         let updated_at = summary.last_message_at.unwrap_or(0);
         if let Some(entry) = self.chats.get_mut(&summary.chat_id) {
@@ -528,6 +644,27 @@ impl ChatCache {
         };
         self.current_bytes += summary_bytes;
         self.chats.insert(entry.summary.chat_id, entry);
+    }
+
+    fn insert_user(&mut self, user: CachedUser) {
+        if user.display_name.trim().is_empty() {
+            return;
+        }
+        self.users.insert(user.user_id, user);
+    }
+
+    fn upsert_user_name(&mut self, user_id: UserId, display_name: &str) {
+        let trimmed = display_name.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.users.insert(
+            user_id,
+            CachedUser {
+                user_id,
+                display_name: trimmed.to_string(),
+            },
+        );
     }
 
     fn insert_message(&mut self, message: CachedMessage) {
@@ -773,6 +910,7 @@ mod tests {
             chat_id: ChatId(chat_id),
             message_id: MessageId(message_id),
             author_id: UserId(1),
+            author_name: None,
             timestamp,
             text: text.to_string(),
             outgoing: false,
@@ -789,6 +927,7 @@ mod tests {
             chat_id: ChatId(1),
             message_id: MessageId(10),
             editor_id: UserId(1),
+            editor_name: None,
             timestamp: 120,
             text: "updated".to_string(),
             outgoing: false,
@@ -799,6 +938,26 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].text, "updated");
         assert_eq!(messages[0].edit_timestamp, Some(120));
+    }
+
+    #[test]
+    fn applies_message_new_updates_user_cache() {
+        let mut cache = ChatCache::new(cache_limits());
+        let message = MessageNew {
+            chat_id: ChatId(1),
+            message_id: MessageId(1),
+            author_id: UserId(42),
+            author_name: Some("Ada Lovelace".to_string()),
+            timestamp: 100,
+            text: "hello".to_string(),
+            outgoing: false,
+        };
+        cache.apply_event(&DomainEvent::MessageNew(message));
+
+        assert_eq!(
+            cache.user_display_name(UserId(42)),
+            Some("Ada Lovelace".to_string())
+        );
     }
 
     #[test]
@@ -862,6 +1021,7 @@ mod tests {
                 text: "hello".to_string(),
                 outgoing: true,
             }],
+            users: Vec::new(),
         };
 
         store.save(&snapshot).expect("save snapshot");

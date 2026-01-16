@@ -1,3 +1,4 @@
+use grammers_client::types::{Message as GrammersMessage, Peer, User};
 use grammers_session::defs::PeerId;
 use grammers_tl_types as tl;
 use tokio::sync::{broadcast, watch};
@@ -21,6 +22,7 @@ pub struct MessageNew {
     pub chat_id: ChatId,
     pub message_id: MessageId,
     pub author_id: UserId,
+    pub author_name: Option<String>,
     pub timestamp: i64,
     pub text: String,
     pub outgoing: bool,
@@ -31,6 +33,7 @@ pub struct MessageEdited {
     pub chat_id: ChatId,
     pub message_id: MessageId,
     pub editor_id: UserId,
+    pub editor_name: Option<String>,
     pub timestamp: i64,
     pub text: String,
     pub outgoing: bool,
@@ -68,13 +71,23 @@ impl EventMapper {
     }
 
     pub fn map_update(&self, update: &grammers_client::Update) -> Option<DomainEvent> {
+        match update {
+            grammers_client::Update::NewMessage(message) => self.map_message_new(message),
+            grammers_client::Update::MessageEdited(message) => self.map_message_edited(message),
+            _ => self.map_raw_update(update),
+        }
+    }
+
+    fn map_raw_update(&self, update: &grammers_client::Update) -> Option<DomainEvent> {
         let state_timestamp = update.state().date as i64;
         match update.raw() {
-            tl::enums::Update::NewMessage(update) => self.map_message_new(&update.message),
-            tl::enums::Update::NewChannelMessage(update) => self.map_message_new(&update.message),
-            tl::enums::Update::EditMessage(update) => self.map_message_edited(&update.message),
+            tl::enums::Update::NewMessage(update) => self.map_raw_message_new(&update.message),
+            tl::enums::Update::NewChannelMessage(update) => {
+                self.map_raw_message_new(&update.message)
+            }
+            tl::enums::Update::EditMessage(update) => self.map_raw_message_edited(&update.message),
             tl::enums::Update::EditChannelMessage(update) => {
-                self.map_message_edited(&update.message)
+                self.map_raw_message_edited(&update.message)
             }
             tl::enums::Update::ReadHistoryOutbox(update) => {
                 self.map_read_receipt(&update.peer, update.max_id, state_timestamp)
@@ -89,25 +102,56 @@ impl EventMapper {
         }
     }
 
-    fn map_message_new(&self, message: &tl::enums::Message) -> Option<DomainEvent> {
-        let fields = self.parse_message(message)?;
+    fn map_message_new(&self, message: &GrammersMessage) -> Option<DomainEvent> {
+        let fields = self.parse_message(&message.raw)?;
+        let author_name = resolve_sender_display_name(message.sender());
         Some(DomainEvent::MessageNew(MessageNew {
             chat_id: fields.chat_id,
             message_id: fields.message_id,
             author_id: fields.author_id,
+            author_name,
             timestamp: fields.date,
             text: fields.text,
             outgoing: fields.outgoing,
         }))
     }
 
-    fn map_message_edited(&self, message: &tl::enums::Message) -> Option<DomainEvent> {
+    fn map_message_edited(&self, message: &GrammersMessage) -> Option<DomainEvent> {
+        let fields = self.parse_message(&message.raw)?;
+        let editor_name = resolve_sender_display_name(message.sender());
+        let timestamp = fields.edit_date.unwrap_or(fields.date);
+        Some(DomainEvent::MessageEdited(MessageEdited {
+            chat_id: fields.chat_id,
+            message_id: fields.message_id,
+            editor_id: fields.author_id,
+            editor_name,
+            timestamp,
+            text: fields.text,
+            outgoing: fields.outgoing,
+        }))
+    }
+
+    fn map_raw_message_new(&self, message: &tl::enums::Message) -> Option<DomainEvent> {
+        let fields = self.parse_message(message)?;
+        Some(DomainEvent::MessageNew(MessageNew {
+            chat_id: fields.chat_id,
+            message_id: fields.message_id,
+            author_id: fields.author_id,
+            author_name: None,
+            timestamp: fields.date,
+            text: fields.text,
+            outgoing: fields.outgoing,
+        }))
+    }
+
+    fn map_raw_message_edited(&self, message: &tl::enums::Message) -> Option<DomainEvent> {
         let fields = self.parse_message(message)?;
         let timestamp = fields.edit_date.unwrap_or(fields.date);
         Some(DomainEvent::MessageEdited(MessageEdited {
             chat_id: fields.chat_id,
             message_id: fields.message_id,
             editor_id: fields.author_id,
+            editor_name: None,
             timestamp,
             text: fields.text,
             outgoing: fields.outgoing,
@@ -284,4 +328,24 @@ fn user_id_from_peer(peer: &tl::enums::Peer) -> Option<UserId> {
         tl::enums::Peer::User(user) => Some(UserId(user.user_id)),
         tl::enums::Peer::Chat(_) | tl::enums::Peer::Channel(_) => None,
     }
+}
+
+fn resolve_sender_display_name(sender: Option<&Peer>) -> Option<String> {
+    let sender = sender?;
+    match sender {
+        Peer::User(user) => resolve_user_display_name(user),
+        Peer::Group(_) | Peer::Channel(_) => None,
+    }
+}
+
+fn resolve_user_display_name(user: &User) -> Option<String> {
+    let full_name = user.full_name();
+    if !full_name.trim().is_empty() {
+        return Some(full_name);
+    }
+    let username = user.username().map(str::trim).unwrap_or_default();
+    if username.is_empty() {
+        return None;
+    }
+    Some(format!("@{}", username.trim_start_matches('@')))
 }

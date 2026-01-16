@@ -13,7 +13,7 @@ pub use bootstrap::{
 };
 pub use cache::{
     CacheConfig, CacheError, CacheLimits, CacheManager, CacheSnapshot, CacheStore, CachedMessage,
-    ChatPeerKind, ChatSummary, SqliteCacheStore,
+    CachedUser, ChatPeerKind, ChatSummary, SqliteCacheStore,
 };
 pub use dialogs::fetch_dialog_summaries;
 pub use error::{Result, TelegramError};

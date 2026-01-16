@@ -12,8 +12,8 @@ use std::time::Duration;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use telegram_llm_core::telegram::{
-    fetch_dialog_summaries, AuthResult, CacheManager, QrLoginResult, SqliteCacheStore,
-    TelegramBootstrap, TelegramConfig,
+    fetch_dialog_summaries, AuthResult, CacheManager, CachedUser, ChatPeerKind, QrLoginResult,
+    SqliteCacheStore, TelegramBootstrap, TelegramConfig, UserId,
 };
 use time::{format_description, UtcOffset};
 use tracing::{info, warn};
@@ -116,6 +116,15 @@ async fn sync_dialog_summaries(
     let summaries = fetch_dialog_summaries(bootstrap.client()).await?;
     let count = summaries.len();
     for summary in summaries {
+        if summary.peer_kind == ChatPeerKind::User {
+            let fallback = format!("Chat {}", summary.chat_id.0);
+            if summary.title.trim() != fallback {
+                cache_manager.upsert_user(CachedUser {
+                    user_id: UserId(summary.chat_id.0),
+                    display_name: summary.title.clone(),
+                });
+            }
+        }
         cache_manager.upsert_chat(summary);
     }
     Ok(count)

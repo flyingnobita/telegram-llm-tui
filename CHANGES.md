@@ -8,6 +8,8 @@
   open and close behavior.
 - Jan-16, 2026 - 03:54 PM +0800 - Suppressed console logging while the TUI
   runs to prevent screen corruption.
+- Jan-16, 2026 - 03:49 PM +0800 - Cached user display names so message
+  authors render by name instead of raw IDs.
 - Jan-16, 2026 - 03:37 PM +0800 - Added a toggleable, scrollable log window
   overlay with a default hotkey and escape close.
 - Jan-15, 2026 - 10:52 PM +0800 - Widened chat list and added scrolling.

@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 
-use telegram_llm_core::telegram::{CacheManager, CachedMessage, ChatId, ChatSummary};
+use telegram_llm_core::telegram::{CacheManager, CachedMessage, ChatId, ChatSummary, UserId};
 use time::{format_description, OffsetDateTime};
 use ui::view::{ChatListItem, MessageItem, UiState};
 
@@ -57,7 +58,8 @@ impl UiCacheBridge {
         self.state.messages = match selected_chat {
             Some(chat_id) => {
                 let messages = cache.messages_for_chat(chat_id, self.message_limit);
-                map_messages(messages)
+                let author_names = resolve_author_names(cache, &messages);
+                map_messages(messages, &author_names)
             }
             None => Vec::new(),
         };
@@ -106,25 +108,41 @@ fn chat_title(chat: &ChatSummary) -> String {
     }
 }
 
-fn map_messages(mut messages: Vec<CachedMessage>) -> Vec<MessageItem> {
+fn map_messages(
+    mut messages: Vec<CachedMessage>,
+    author_names: &HashMap<UserId, String>,
+) -> Vec<MessageItem> {
     messages.sort_by_key(|message| message.timestamp);
     messages
         .into_iter()
         .map(|message| MessageItem {
             id: message.message_id.0,
-            author: message_author_label(&message),
+            author: message_author_label(&message, author_names),
             timestamp: format_timestamp(message.timestamp),
             body: message.text,
         })
         .collect()
 }
 
-fn message_author_label(message: &CachedMessage) -> String {
+fn message_author_label(message: &CachedMessage, author_names: &HashMap<UserId, String>) -> String {
     if message.outgoing {
         "You".to_string()
+    } else if let Some(name) = author_names.get(&message.author_id) {
+        name.clone()
     } else {
         format!("User {}", message.author_id.0)
     }
+}
+
+fn resolve_author_names(
+    cache: &CacheManager,
+    messages: &[CachedMessage],
+) -> HashMap<UserId, String> {
+    let mut author_ids = HashSet::new();
+    for message in messages {
+        author_ids.insert(message.author_id);
+    }
+    cache.user_display_names(author_ids)
 }
 
 fn format_timestamp(timestamp: i64) -> String {
@@ -148,8 +166,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use telegram_llm_core::telegram::{
-        CacheConfig, CacheError, CacheLimits, CacheSnapshot, CacheStore, ChatPeerKind, ChatSummary,
-        DomainEvent, MessageId, MessageNew, UserId,
+        CacheConfig, CacheError, CacheLimits, CacheSnapshot, CacheStore, CachedUser, ChatPeerKind,
+        ChatSummary, DomainEvent, MessageId, MessageNew, UserId,
     };
 
     #[derive(Default)]
@@ -196,6 +214,7 @@ mod tests {
             chat_id: ChatId(chat_id),
             message_id: MessageId(message_id),
             author_id: UserId(42),
+            author_name: None,
             timestamp,
             text: format!("message-{}", message_id),
             outgoing,
@@ -248,6 +267,30 @@ mod tests {
         assert_eq!(bridge.state.messages[1].id, 2);
         assert_eq!(bridge.state.messages[1].author, "User 42");
         assert_eq!(bridge.state.messages[1].timestamp, "00:02");
+
+        manager.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn maps_message_author_names_from_cache() {
+        let store: Arc<dyn CacheStore> = Arc::new(InMemoryStore::default());
+        let manager = CacheManager::spawn(store, cache_config())
+            .await
+            .expect("spawn cache manager");
+
+        manager.upsert_chat(chat_summary(1, "General", 100));
+        manager.apply_event(&DomainEvent::MessageNew(message_new(1, 1, 60, false)));
+        manager.upsert_user(CachedUser {
+            user_id: UserId(42),
+            display_name: "Ada Lovelace".to_string(),
+        });
+
+        let mut bridge = UiCacheBridge::new(None, 32);
+        bridge.set_selected_chat(Some(ChatId(1)));
+        bridge.refresh(&manager);
+
+        assert_eq!(bridge.state.messages.len(), 1);
+        assert_eq!(bridge.state.messages[0].author, "Ada Lovelace");
 
         manager.shutdown().await;
     }

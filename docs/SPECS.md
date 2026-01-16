@@ -15,6 +15,8 @@
   log window shows the primary log file (`[logging].log_file`). Logs are not
   shown in the main window, and it shows up to `[ui].log_window_max_lines`
   lines.
+- Render message authors using display names (name or @username) when available.
+- Provide message pane horizontal scrolling with visible scrollbars.
 
 ### Non‑functional
 

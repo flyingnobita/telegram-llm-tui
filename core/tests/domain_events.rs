@@ -94,6 +94,7 @@ fn maps_new_message_update() {
             assert_eq!(payload.chat_id, ChatId(1001));
             assert_eq!(payload.message_id, MessageId(42));
             assert_eq!(payload.author_id, UserId(1001));
+            assert!(payload.author_name.is_none());
             assert_eq!(payload.timestamp, 111);
             assert_eq!(payload.text, "hello");
             assert!(!payload.outgoing);
@@ -120,6 +121,7 @@ fn maps_edited_message_update() {
             assert_eq!(payload.chat_id, ChatId(1002));
             assert_eq!(payload.message_id, MessageId(7));
             assert_eq!(payload.editor_id, UserId(1002));
+            assert!(payload.editor_name.is_none());
             assert_eq!(payload.timestamp, 250);
             assert_eq!(payload.text, "edited");
             assert!(!payload.outgoing);
