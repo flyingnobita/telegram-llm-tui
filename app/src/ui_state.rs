@@ -1,7 +1,9 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use telegram_llm_core::telegram::{CacheManager, CachedMessage, ChatId, ChatSummary, UserId};
+use telegram_llm_core::telegram::{
+    CacheManager, CachedMessage, ChatId, ChatSummary, DialogSnapshot, PeerRef, UserId,
+};
 use time::{format_description, OffsetDateTime};
 use ui::view::{ChatListItem, MessageItem, UiState};
 
@@ -10,6 +12,7 @@ pub struct UiCacheBridge {
     pub state: UiState,
     selected_chat: Option<ChatId>,
     message_limit: Option<usize>,
+    chat_peers: HashMap<ChatId, PeerRef>,
 }
 
 impl UiCacheBridge {
@@ -22,6 +25,7 @@ impl UiCacheBridge {
             state,
             selected_chat: None,
             message_limit,
+            chat_peers: HashMap::new(),
         }
     }
 
@@ -66,6 +70,21 @@ impl UiCacheBridge {
         self.state.message_view.reconcile(&self.state.messages);
 
         selected_chat
+    }
+
+    pub fn register_dialog_peers(&mut self, dialogs: &[DialogSnapshot]) {
+        for dialog in dialogs {
+            self.chat_peers.insert(dialog.summary.chat_id, dialog.peer);
+        }
+    }
+
+    pub fn selected_chat_id(&self) -> Option<ChatId> {
+        self.selected_chat
+    }
+
+    pub fn selected_peer(&self) -> Option<PeerRef> {
+        self.selected_chat
+            .and_then(|chat_id| self.chat_peers.get(&chat_id).copied())
     }
 }
 

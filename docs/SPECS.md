@@ -20,6 +20,9 @@
 - Render message authors using display names (name or @username) when available.
 - Provide message pane horizontal scrolling with visible scrollbars.
 - Provide chat list pane vertical and horizontal scrollbars.
+- Composer input sends the current draft to the selected chat when Enter is
+  pressed while the composer has focus. Ignore empty or whitespace-only drafts.
+  Preserve the draft if the send cannot be enqueued.
 - Use a reusable scrollable pane component for TUI panes (chat list, message
   list, message composer, log window) that:
   - supports vertical scrolling, optional horizontal scrolling, and optional

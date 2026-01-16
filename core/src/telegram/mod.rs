@@ -23,6 +23,7 @@ pub use events::{
     MessageEdited, MessageId, MessageNew, ReadReceipt, Typing, UserId,
 };
 pub use grammers_client::Client as TelegramClient;
+pub use grammers_session::defs::PeerRef;
 pub use history::fetch_recent_messages;
 pub use send::{
     spawn_grammers_send_pipeline, spawn_send_pipeline, SendEnqueueError, SendFailure, SendId,

@@ -14,14 +14,41 @@ pub enum KeymapStyle {
     Vscode,
 }
 
-pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiAction {
+    ComposerSubmit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UiActionResult {
+    pub handled: bool,
+    pub action: Option<UiAction>,
+}
+
+impl UiActionResult {
+    fn handled(handled: bool) -> Self {
+        Self {
+            handled,
+            action: None,
+        }
+    }
+
+    fn action(action: UiAction) -> Self {
+        Self {
+            handled: true,
+            action: Some(action),
+        }
+    }
+}
+
+pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> UiActionResult {
     if state.log_view.is_open {
-        return handle_log_view_key(state, key, style);
+        return UiActionResult::handled(handle_log_view_key(state, key, style));
     }
 
     if key.code == KeyCode::Char('l') && key.modifiers == KeyModifiers::NONE {
         state.log_view.is_open = true;
-        return true;
+        return UiActionResult::handled(true);
     }
 
     if state.message_view.search.is_open && state.focus != UiFocus::Search {
@@ -30,14 +57,14 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
 
     if key.code == KeyCode::Tab && key.modifiers == KeyModifiers::NONE {
         cycle_focus(state);
-        return true;
+        return UiActionResult::handled(true);
     }
 
     match state.focus {
-        UiFocus::Chats => handle_chats_key(state, key, style),
-        UiFocus::Messages => handle_messages_key(state, key, style),
+        UiFocus::Chats => UiActionResult::handled(handle_chats_key(state, key, style)),
+        UiFocus::Messages => UiActionResult::handled(handle_messages_key(state, key, style)),
         UiFocus::Composer => handle_composer_key(state, key, style),
-        UiFocus::Search => handle_search_key(state, key),
+        UiFocus::Search => UiActionResult::handled(handle_search_key(state, key)),
     }
 }
 
@@ -293,7 +320,7 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
     }
 }
 
-fn handle_composer_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> bool {
+fn handle_composer_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> UiActionResult {
     match key {
         KeyEvent {
             code: KeyCode::Esc,
@@ -301,7 +328,7 @@ fn handle_composer_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             ..
         } => {
             state.focus = UiFocus::Messages;
-            true
+            UiActionResult::handled(true)
         }
         KeyEvent {
             code: KeyCode::Char('['),
@@ -309,9 +336,20 @@ fn handle_composer_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             ..
         } if style == KeymapStyle::Vim && modifiers.contains(KeyModifiers::CONTROL) => {
             state.focus = UiFocus::Messages;
-            true
+            UiActionResult::handled(true)
         }
-        _ => handle_text_key(&mut state.input, key),
+        KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            if state.input.text.trim().is_empty() {
+                UiActionResult::handled(true)
+            } else {
+                UiActionResult::action(UiAction::ComposerSubmit)
+            }
+        }
+        _ => UiActionResult::handled(handle_text_key(&mut state.input, key)),
     }
 }
 
@@ -577,14 +615,14 @@ mod tests {
         state.focus = UiFocus::Messages;
         state.message_view.cursor = Some(0);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
             KeymapStyle::Vim,
         );
         assert_eq!(state.message_view.cursor, Some(1));
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
             KeymapStyle::Vim,
@@ -598,14 +636,14 @@ mod tests {
         state.focus = UiFocus::Messages;
         state.message_view.cursor = Some(0);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
         assert_eq!(state.message_view.cursor, Some(1));
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
             KeymapStyle::Vscode,
@@ -619,14 +657,14 @@ mod tests {
         state.focus = UiFocus::Messages;
         state.message_view.cursor = Some(0);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
         assert!(state.message_view.selected_ids.contains(&1));
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
             KeymapStyle::Vscode,
@@ -639,7 +677,7 @@ mod tests {
         let mut state = sample_state();
         state.focus = UiFocus::Messages;
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
             KeymapStyle::Vim,
@@ -647,13 +685,56 @@ mod tests {
         assert!(state.message_view.search.is_open);
         assert_eq!(state.focus, UiFocus::Search);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
             KeymapStyle::Vim,
         );
         assert_eq!(state.message_view.search.query.text, "h");
         assert_eq!(state.message_view.search.matches, vec![0]);
+    }
+
+    #[test]
+    fn composer_enter_emits_submit_action() {
+        let mut state = UiState {
+            focus: UiFocus::Composer,
+            input: InputState {
+                text: "hello".to_string(),
+                cursor: 5,
+            },
+            ..Default::default()
+        };
+
+        let result = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(result.handled);
+        assert_eq!(result.action, Some(UiAction::ComposerSubmit));
+        assert_eq!(state.input.text, "hello");
+    }
+
+    #[test]
+    fn composer_enter_ignores_empty_draft() {
+        let mut state = UiState {
+            focus: UiFocus::Composer,
+            input: InputState {
+                text: "   ".to_string(),
+                cursor: 3,
+            },
+            ..Default::default()
+        };
+
+        let result = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(result.handled);
+        assert_eq!(result.action, None);
     }
 
     #[test]
@@ -677,7 +758,7 @@ mod tests {
             ..Default::default()
         };
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
             KeymapStyle::Vscode,
@@ -701,14 +782,14 @@ mod tests {
         };
         state.chat_list_pane.viewport.width = 8;
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
         assert_eq!(state.chat_list_pane.scroll_horizontal, 1);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
             KeymapStyle::Vscode,
@@ -744,14 +825,14 @@ mod tests {
         };
         state.chat_list_pane.page_size = 2;
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
         assert_eq!(state.chat_list_pane.scroll_vertical, 0);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
             KeymapStyle::Vscode,
@@ -769,7 +850,7 @@ mod tests {
             KeymapStyle::Vscode,
         );
 
-        assert!(handled);
+        assert!(handled.handled);
         assert!(state.log_view.is_open);
     }
 
@@ -784,7 +865,7 @@ mod tests {
             KeymapStyle::Vscode,
         );
 
-        assert!(handled);
+        assert!(handled.handled);
         assert!(!state.log_view.is_open);
     }
 
@@ -799,7 +880,7 @@ mod tests {
             KeymapStyle::Vscode,
         );
 
-        assert!(handled);
+        assert!(handled.handled);
         assert!(!state.log_view.is_open);
     }
 
@@ -823,21 +904,21 @@ mod tests {
             ..UiState::default()
         };
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
         assert_eq!(state.log_view.pane.scroll_vertical, 1);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
         assert_eq!(state.log_view.pane.scroll_vertical, 3);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
             KeymapStyle::Vscode,
@@ -857,14 +938,14 @@ mod tests {
         };
         state.log_view.pane.viewport.width = 5;
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
         assert_eq!(state.log_view.pane.scroll_horizontal, 1);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
             KeymapStyle::Vscode,
@@ -878,14 +959,14 @@ mod tests {
         state.focus = UiFocus::Messages;
         state.message_view.pane.viewport.width = 5;
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
         assert!(state.message_view.pane.scroll_horizontal > 0);
 
-        handle_ui_key(
+        let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
             KeymapStyle::Vscode,

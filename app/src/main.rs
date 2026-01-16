@@ -98,6 +98,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             if count > 0 {
                 ui_bridge.refresh(cache_manager.as_ref());
             }
+            ui_bridge.register_dialog_peers(&dialogs);
             Some(dialogs)
         }
         Err(err) => {
@@ -105,6 +106,8 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             None
         }
     };
+
+    let send_pipeline = bootstrap.spawn_send_pipeline();
 
     info!("starting domain event stream");
     let event_stream = bootstrap.spawn_event_stream(config.update_buffer)?;
@@ -153,6 +156,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         event_rx,
         cache_refresh_rx,
         config.keymap_style,
+        &send_pipeline,
         console_gate.clone(),
         config.log_file_path.clone(),
         config.log_window_max_lines,
@@ -165,6 +169,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     event_stream.stop().await;
+    send_pipeline.stop().await;
     let cache_manager =
         Arc::try_unwrap(cache_manager).expect("cache manager still shared during shutdown");
     cache_manager.shutdown().await;

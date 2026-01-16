@@ -18,8 +18,9 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use telegram_llm_core::telegram::{CacheManager, EventReceiver};
-use ui::interaction::{handle_ui_key, KeymapStyle};
+use telegram_llm_core::telegram::{CacheManager, EventReceiver, SendPipeline, SendRequest};
+use ui::input::InputState;
+use ui::interaction::{handle_ui_key, KeymapStyle, UiAction};
 use ui::view::UiState;
 use ui::view::{
     chat_list_text_area, clamp_chat_list_scroll, composer_text_area,
@@ -41,6 +42,7 @@ pub async fn run_tui_loop(
     mut event_rx: EventReceiver,
     mut cache_refresh_rx: mpsc::UnboundedReceiver<()>,
     keymap: KeymapStyle,
+    send_pipeline: &SendPipeline,
     console_gate: ConsoleLogGate,
     log_path: PathBuf,
     log_window_max_lines: usize,
@@ -64,7 +66,7 @@ pub async fn run_tui_loop(
             _ = ticker.tick() => {}
             maybe_input = input_rx.recv() => {
                 if let Some(event) = maybe_input {
-                    if handle_input_event(event, ui_bridge, cache_manager, keymap) {
+                    if handle_input_event(event, ui_bridge, cache_manager, keymap, send_pipeline) {
                         should_exit = true;
                     }
                 } else {
@@ -121,9 +123,12 @@ fn handle_input_event(
     ui_bridge: &mut UiCacheBridge,
     cache_manager: &CacheManager,
     keymap: KeymapStyle,
+    send_pipeline: &SendPipeline,
 ) -> bool {
     match event {
-        InputEvent::Key(key) => handle_key_event(key, ui_bridge, cache_manager, keymap),
+        InputEvent::Key(key) => {
+            handle_key_event(key, ui_bridge, cache_manager, keymap, send_pipeline)
+        }
         InputEvent::Resize(width, height) => {
             apply_page_size(&mut ui_bridge.state, Rect::new(0, 0, width, height));
             false
@@ -136,6 +141,7 @@ fn handle_key_event(
     ui_bridge: &mut UiCacheBridge,
     cache_manager: &CacheManager,
     keymap: KeymapStyle,
+    send_pipeline: &SendPipeline,
 ) -> bool {
     if matches!(key.kind, KeyEventKind::Release) {
         return false;
@@ -144,11 +150,59 @@ fn handle_key_event(
         return true;
     }
 
-    let handled = handle_ui_key(&mut ui_bridge.state, key, keymap);
-    if handled && ui_bridge.sync_selected_chat_from_state() {
+    let result = handle_ui_key(&mut ui_bridge.state, key, keymap);
+    if result.handled && ui_bridge.sync_selected_chat_from_state() {
         ui_bridge.refresh(cache_manager);
     }
+    if let Some(action) = result.action {
+        handle_ui_action(action, ui_bridge, send_pipeline);
+    }
     false
+}
+
+fn handle_ui_action(action: UiAction, ui_bridge: &mut UiCacheBridge, send_pipeline: &SendPipeline) {
+    match action {
+        UiAction::ComposerSubmit => handle_composer_submit(ui_bridge, send_pipeline),
+    }
+}
+
+fn handle_composer_submit(ui_bridge: &mut UiCacheBridge, send_pipeline: &SendPipeline) {
+    let draft = ui_bridge.state.input.text.clone();
+    if draft.trim().is_empty() {
+        return;
+    }
+
+    let Some(chat_id) = ui_bridge.selected_chat_id() else {
+        warn!("no chat selected for composer submit");
+        return;
+    };
+    let Some(peer) = ui_bridge.selected_peer() else {
+        warn!(chat_id = chat_id.0, "missing peer ref for composer submit");
+        return;
+    };
+
+    let request = SendRequest::SendText {
+        peer,
+        text: draft,
+        reply_to: None,
+    };
+    match send_pipeline.enqueue(request) {
+        Ok(ticket) => {
+            info!(
+                chat_id = chat_id.0,
+                send_id = ticket.id.0,
+                "queued composer send"
+            );
+            ui_bridge.state.input = InputState::default();
+        }
+        Err(err) => {
+            warn!(
+                chat_id = chat_id.0,
+                error = %err,
+                "failed to enqueue composer send"
+            );
+        }
+    }
 }
 
 fn is_exit_key(key: &KeyEvent) -> bool {

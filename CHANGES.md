@@ -1,5 +1,7 @@
 # Changes
 
+- Jan-16, 2026 - 11:23 PM +0800 - Wired composer Enter to enqueue sends via the
+  send pipeline, tracking dialog peers and adding submit-action tests.
 - Jan-16, 2026 - 11:00 PM +08 - Added `data/` to `.gitignore` to keep local cache/session files untracked.
 - Jan-16, 2026 - 10:24 PM +0800 - Added shared pane scrollbars to the chat
   list and enabled horizontal scrolling for the log window.
