@@ -11,8 +11,8 @@ troubleshooting and reproducibility while keeping log growth bounded.
 ## Decision
 
 - Use plain text logs by default.
-- Primary log file is `data/logs/app.log`.
-- Error log file is `data/logs/app-error.log`.
+- Primary log file is `logs/app.log`.
+- Error log file is `logs/app-error.log`.
 - Log rotation is size-based at 1 MB per file, keeping 20 files.
 - Telegram messages and LLM prompts/responses are logged verbatim by default.
 - Default log level is `info`.

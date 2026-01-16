@@ -1,8 +1,11 @@
 # Rust
 /target/
 **/*.rs.bk
-data/logs/*
-session to avoid re-login
+/data/
+!/data/
+!/data/cache.sqlite
+!/data/telegram.session
+/logs/
 
 # Env files (dev-only secrets)
 .env

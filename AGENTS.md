@@ -30,7 +30,9 @@ Tool versions are managed via mise-en-place.
 - `cargo test` — run unit tests (once scaffolded).
 - `INSTA_UPDATE=always mise exec -- cargo test -p ui` — update UI snapshots
   during tests.
-- `cargo fmt -- --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings` — formatting and linting (planned in CI).
+- `cargo fmt -- --check` and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings` —
+  formatting and linting (planned in CI).
 - `cargo nextest run` — integration test runner (planned).
 
 ## Coding Style & Naming Conventions
@@ -64,6 +66,6 @@ Tool versions are managed via mise-en-place.
 
 ## Logging
 
-- Error log file: `data/logs/app-error.log` (configured in
+- Error log file: `logs/app-error.log` (configured in
   config file under `[logging].error_log_file`).
 - Log level: configured in config file under `[logging].level`

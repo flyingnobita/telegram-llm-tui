@@ -30,10 +30,10 @@ record them here with:
 
 ## Logging
 
-- Primary log file: `data/logs/app.log` (configured in `app/config/app.toml`
+- Primary log file: `logs/app.log` (configured in `app/config/app.toml`
   under
   `[logging].log_file`).
-- Error log file: `data/logs/app-error.log` (configured in
+- Error log file: `logs/app-error.log` (configured in
   `app/config/app.toml` under `[logging].error_log_file`).
 - Log level: configured in `app/config/app.toml` under `[logging].level`
   (default `info`).

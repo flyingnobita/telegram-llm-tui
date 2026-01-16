@@ -1,5 +1,6 @@
 # Changes
 
+- Jan-16, 2026 - 08:28 PM +08 - Moved log dir to repo root.
 - Jan-16, 2026 - 04:39 PM +0800 - Moved history sync to the background so TUI starts.
 - Jan-16, 2026 - 04:26 PM +0800 - Added horizontal scrolling and scrollbars
   to the message pane.

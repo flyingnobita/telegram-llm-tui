@@ -31,7 +31,7 @@ remains LLM-friendly for automation.
 
 ## Logging
 
-- Error log file: `data/logs/app-error.log` (configured in
+- Error log file: `logs/app-error.log` (configured in
   `app/config/app.toml` under `[logging].error_log_file`).
 - Log level: configured in `app/config/app.toml` under `[logging].level`
   (default `info`).

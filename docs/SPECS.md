@@ -31,10 +31,10 @@
 - Log timestamps use local time with RFC 3339 offset.
 - Treat logs as sensitive data; do not log auth tokens.
 - Works on macOS first; Linux/Windows follow-up.
-- Primary log file: `data/logs/app.log` (configured in `app/config/app.toml`
+- Primary log file: `logs/app.log` (configured in `app/config/app.toml`
   under
   `[logging].log_file`).
-- Error log file: `data/logs/app-error.log` (configured in
+- Error log file: `logs/app-error.log` (configured in
   `app/config/app.toml` under `[logging].error_log_file`).
 - Log level: configured in `app/config/app.toml` under `[logging].level`
   (default `info`).
