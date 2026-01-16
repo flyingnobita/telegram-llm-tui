@@ -1,7 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::input::{handle_key as handle_text_key, InputState};
-use crate::view::{chat_list_max_scroll, log_view_max_scroll, ChatListItem, UiFocus, UiState};
+use crate::view::{
+    chat_list_max_scroll, log_view_max_scroll, message_line_offset, message_max_horizontal_scroll,
+    message_max_scroll, ChatListItem, UiFocus, UiState,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum KeymapStyle {
@@ -178,6 +181,16 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             ..
         } if style == KeymapStyle::Vim => move_message_cursor(state, -1),
         KeyEvent {
+            code: KeyCode::Char('h'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } if style == KeymapStyle::Vim => scroll_horizontal(state, -1),
+        KeyEvent {
+            code: KeyCode::Char('l'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        } if style == KeymapStyle::Vim => scroll_horizontal(state, 1),
+        KeyEvent {
             code: KeyCode::Char('g'),
             modifiers: KeyModifiers::NONE,
             ..
@@ -202,6 +215,16 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             modifiers: KeyModifiers::NONE,
             ..
         } => move_message_cursor(state, 1),
+        KeyEvent {
+            code: KeyCode::Left,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => scroll_horizontal(state, -1),
+        KeyEvent {
+            code: KeyCode::Right,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => scroll_horizontal(state, 1),
         KeyEvent {
             code: KeyCode::Home,
             modifiers: KeyModifiers::NONE,
@@ -296,7 +319,8 @@ fn handle_search_key(state: &mut UiState, key: KeyEvent) -> bool {
             let selected = state.message_view.search.selected_match();
             if let Some(match_index) = selected {
                 state.message_view.cursor = Some(match_index);
-                state.message_view.scroll_offset = match_index;
+                state.message_view.scroll_offset =
+                    message_line_offset(&state.messages, match_index);
                 return true;
             }
             false
@@ -333,7 +357,7 @@ fn jump_search_match(state: &mut UiState, forward: bool) -> bool {
     let match_index = state.message_view.search.advance(forward);
     if let Some(index) = match_index {
         state.message_view.cursor = Some(index);
-        state.message_view.scroll_offset = index;
+        state.message_view.scroll_offset = message_line_offset(&state.messages, index);
         return true;
     }
     false
@@ -382,10 +406,11 @@ fn ensure_cursor_visible(state: &mut UiState) {
     };
     let page_size = state.message_view.page_size.max(1);
     let scroll = state.message_view.scroll_offset;
-    if cursor < scroll {
-        state.message_view.scroll_offset = cursor;
-    } else if cursor >= scroll + page_size {
-        state.message_view.scroll_offset = cursor + 1 - page_size;
+    let cursor_line = message_line_offset(&state.messages, cursor);
+    if cursor_line < scroll {
+        state.message_view.scroll_offset = cursor_line;
+    } else if cursor_line >= scroll + page_size {
+        state.message_view.scroll_offset = cursor_line + 1 - page_size;
     }
 }
 
@@ -398,10 +423,27 @@ fn scroll_by(state: &mut UiState, delta: i32) -> bool {
     if state.messages.is_empty() {
         return false;
     }
-    let max_offset = state.messages.len() as i32 - 1;
+    let max_offset = message_max_scroll(state) as i32;
     let current = state.message_view.scroll_offset as i32;
     let next = (current + delta).clamp(0, max_offset) as usize;
+    if next == state.message_view.scroll_offset {
+        return false;
+    }
     state.message_view.scroll_offset = next;
+    true
+}
+
+fn scroll_horizontal(state: &mut UiState, delta: i32) -> bool {
+    if state.messages.is_empty() {
+        return false;
+    }
+    let max_offset = message_max_horizontal_scroll(state) as i32;
+    let current = state.message_view.scroll_horizontal as i32;
+    let next = (current + delta).clamp(0, max_offset) as usize;
+    if next == state.message_view.scroll_horizontal {
+        return false;
+    }
+    state.message_view.scroll_horizontal = next;
     true
 }
 
@@ -726,5 +768,26 @@ mod tests {
             KeymapStyle::Vscode,
         );
         assert_eq!(state.log_view.scroll_offset, 1);
+    }
+
+    #[test]
+    fn message_pane_scrolls_horizontally() {
+        let mut state = sample_state();
+        state.focus = UiFocus::Messages;
+        state.message_viewport_width = 5;
+
+        handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert!(state.message_view.scroll_horizontal > 0);
+
+        handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.message_view.scroll_horizontal, 0);
     }
 }

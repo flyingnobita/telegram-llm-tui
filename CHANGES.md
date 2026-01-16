@@ -1,13 +1,9 @@
 # Changes
 
-- Jan-16, 2026 - 04:16 PM +0800 - Added `log_window_max_lines` to config for
-  the log window tail size.
-- Jan-16, 2026 - 04:10 PM +0800 - Loaded the log window from the primary log
-  file and refreshed it while the window is open.
-- Jan-16, 2026 - 04:06 PM +0800 - Switched the log window hotkey to `l` for
-  open and close behavior.
-- Jan-16, 2026 - 03:54 PM +0800 - Suppressed console logging while the TUI
-  runs to prevent screen corruption.
+- Jan-16, 2026 - 04:26 PM +0800 - Added horizontal scrolling and scrollbars
+  to the message pane.
+- Jan-16, 2026 - 04:09 PM +0800 - Fixed message pane scrolling for
+  multi-line messages so long bodies can be viewed.
 - Jan-16, 2026 - 03:49 PM +0800 - Cached user display names so message
   authors render by name instead of raw IDs.
 - Jan-16, 2026 - 03:37 PM +0800 - Added a toggleable, scrollable log window

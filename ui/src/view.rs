@@ -3,7 +3,10 @@ use std::collections::BTreeSet;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Wrap,
+    },
     Frame,
 };
 
@@ -103,6 +106,7 @@ impl MessageSearchState {
 #[derive(Debug, Clone)]
 pub struct MessageViewState {
     pub scroll_offset: usize,
+    pub scroll_horizontal: usize,
     pub cursor: Option<usize>,
     pub selected_ids: BTreeSet<i64>,
     pub search: MessageSearchState,
@@ -113,6 +117,7 @@ impl Default for MessageViewState {
     fn default() -> Self {
         Self {
             scroll_offset: 0,
+            scroll_horizontal: 0,
             cursor: None,
             selected_ids: BTreeSet::new(),
             search: MessageSearchState::default(),
@@ -129,10 +134,12 @@ impl MessageViewState {
         if messages.is_empty() {
             self.cursor = None;
             self.scroll_offset = 0;
+            self.scroll_horizontal = 0;
         } else {
             let max_index = messages.len().saturating_sub(1);
             self.cursor = Some(self.cursor.unwrap_or(max_index).min(max_index));
-            self.scroll_offset = self.scroll_offset.min(max_index);
+            let max_scroll = message_max_scroll_for(messages, self.page_size);
+            self.scroll_offset = self.scroll_offset.min(max_scroll);
         }
 
         self.search.recompute_matches(messages);
@@ -206,6 +213,7 @@ pub struct UiState {
     pub chat_list_width: u16,
     pub chat_list_scroll: usize,
     pub chat_list_viewport_width: u16,
+    pub message_viewport_width: u16,
 }
 
 impl Default for UiState {
@@ -223,6 +231,7 @@ impl Default for UiState {
             chat_list_width: DEFAULT_CHAT_LIST_WIDTH,
             chat_list_scroll: 0,
             chat_list_viewport_width: 0,
+            message_viewport_width: 0,
         }
     }
 }
@@ -261,7 +270,13 @@ pub fn message_viewport_area(area: Rect, chat_list_width: u16) -> Rect {
 pub fn message_viewport_page_size(area: Rect, chat_list_width: u16) -> usize {
     let message_area = message_viewport_area(area, chat_list_width);
     let inner = Block::default().borders(Borders::ALL).inner(message_area);
-    inner.height.max(1) as usize
+    inner.height.saturating_sub(1).max(1) as usize
+}
+
+pub fn message_viewport_width(area: Rect, chat_list_width: u16) -> u16 {
+    let message_area = message_viewport_area(area, chat_list_width);
+    let inner = Block::default().borders(Borders::ALL).inner(message_area);
+    inner.width.saturating_sub(1).max(1)
 }
 
 pub fn chat_list_viewport_width(area: Rect, chat_list_width: u16) -> u16 {
@@ -291,6 +306,35 @@ pub fn log_view_max_scroll(state: &UiState) -> usize {
     let page_size = state.log_view.page_size.max(1);
     let line_count = state.logs.len().max(1);
     line_count.saturating_sub(page_size)
+}
+
+pub fn message_max_scroll(state: &UiState) -> usize {
+    message_max_scroll_for(&state.messages, state.message_view.page_size)
+}
+
+pub fn message_max_horizontal_scroll(state: &UiState) -> usize {
+    let viewport_width = state.message_viewport_width.max(1) as usize;
+    let max_line_width = message_max_line_width(state);
+    max_line_width.saturating_sub(viewport_width)
+}
+
+pub(crate) fn message_max_scroll_for(messages: &[MessageItem], page_size: usize) -> usize {
+    let total_lines = message_total_lines(messages);
+    let page = page_size.max(1);
+    total_lines.saturating_sub(page)
+}
+
+pub(crate) fn message_line_offset(messages: &[MessageItem], index: usize) -> usize {
+    messages.iter().take(index).map(message_line_count).sum()
+}
+
+fn message_total_lines(messages: &[MessageItem]) -> usize {
+    messages.iter().map(message_line_count).sum()
+}
+
+fn message_line_count(message: &MessageItem) -> usize {
+    let lines = message.body.lines().count();
+    lines.max(1)
 }
 
 fn clamp_chat_list_width(area_width: u16, desired: u16) -> u16 {
@@ -358,18 +402,25 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
         .block(chat_block)
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
-    let (message_text, scroll_offset) = build_message_text(state);
+    let (message_text, scroll_offset, scroll_horizontal) = build_message_text(state);
     let message_title = message_view_title(state);
 
-    let message_view = Paragraph::new(message_text)
-        .wrap(Wrap { trim: true })
-        .scroll((scroll_offset, 0))
-        .block(
-            Block::default()
-                .title(message_title)
-                .borders(Borders::ALL)
-                .border_style(focus_border_style(message_focused)),
-        );
+    let message_block = Block::default()
+        .title(message_title)
+        .borders(Borders::ALL)
+        .border_style(focus_border_style(message_focused));
+    let message_inner = message_block.inner(layout.messages);
+
+    let scrollbar_width = if message_inner.width > 1 { 1 } else { 0 };
+    let scrollbar_height = if message_inner.height > 1 { 1 } else { 0 };
+    let text_area = Rect {
+        x: message_inner.x,
+        y: message_inner.y,
+        width: message_inner.width.saturating_sub(scrollbar_width).max(1),
+        height: message_inner.height.saturating_sub(scrollbar_height).max(1),
+    };
+
+    let message_view = Paragraph::new(message_text).scroll((scroll_offset, scroll_horizontal));
 
     let composer = Paragraph::new(state.input.text.as_str()).block(
         Block::default()
@@ -379,7 +430,40 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
     );
 
     frame.render_stateful_widget(chat_list, layout.chat_list, &mut chat_state);
-    frame.render_widget(message_view, layout.messages);
+    frame.render_widget(message_block, layout.messages);
+    frame.render_widget(message_view, text_area);
+
+    let mut vertical_scroll_state = ScrollbarState::new(message_total_lines(&state.messages))
+        .position(state.message_view.scroll_offset);
+    if scrollbar_width > 0 {
+        let vertical_area = Rect {
+            x: text_area.x + text_area.width,
+            y: text_area.y,
+            width: scrollbar_width,
+            height: text_area.height,
+        };
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight),
+            vertical_area,
+            &mut vertical_scroll_state,
+        );
+    }
+
+    let mut horizontal_scroll_state = ScrollbarState::new(message_max_line_width(state))
+        .position(state.message_view.scroll_horizontal);
+    if scrollbar_height > 0 {
+        let horizontal_area = Rect {
+            x: text_area.x,
+            y: text_area.y + text_area.height,
+            width: text_area.width,
+            height: scrollbar_height,
+        };
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::HorizontalBottom),
+            horizontal_area,
+            &mut horizontal_scroll_state,
+        );
+    }
     frame.render_widget(composer, layout.composer);
 
     if state.draft_modal.is_open {
@@ -417,56 +501,78 @@ fn message_view_title(state: &UiState) -> String {
     }
 }
 
-fn build_message_text(state: &UiState) -> (String, u16) {
+fn build_message_text(state: &UiState) -> (String, u16, u16) {
     if state.messages.is_empty() {
-        return ("No messages".to_string(), 0);
+        return ("No messages".to_string(), 0, 0);
     }
 
-    let search_matches = &state.message_view.search.matches;
-    let lines: Vec<String> = state
-        .messages
-        .iter()
-        .enumerate()
-        .map(|(idx, message)| {
-            let cursor_marker = if state.message_view.cursor == Some(idx) {
-                ">"
-            } else {
-                " "
-            };
-            let selected_marker = if state.message_view.selected_ids.contains(&message.id) {
-                "x"
-            } else {
-                " "
-            };
-            let match_marker = if search_matches.contains(&idx) {
-                "*"
-            } else {
-                " "
-            };
-            let timestamp = if message.timestamp.is_empty() {
-                String::new()
-            } else {
-                format!("[{}] ", message.timestamp)
-            };
-            format!(
-                "{} [{}{}] {}{}: {}",
-                cursor_marker,
-                selected_marker,
-                match_marker,
-                timestamp,
-                message.author,
-                message.body
-            )
-        })
-        .collect();
+    let lines = build_message_lines(state);
 
+    let max_scroll = message_max_scroll(state);
     let scroll_offset = state
         .message_view
         .scroll_offset
-        .min(lines.len().saturating_sub(1))
+        .min(max_scroll)
         .min(u16::MAX as usize) as u16;
 
-    (lines.join("\n"), scroll_offset)
+    let max_horizontal = message_max_horizontal_scroll(state);
+    let scroll_horizontal = state
+        .message_view
+        .scroll_horizontal
+        .min(max_horizontal)
+        .min(u16::MAX as usize) as u16;
+
+    (lines.join("\n"), scroll_offset, scroll_horizontal)
+}
+
+fn build_message_lines(state: &UiState) -> Vec<String> {
+    let search_matches = &state.message_view.search.matches;
+    let mut lines = Vec::new();
+    for (idx, message) in state.messages.iter().enumerate() {
+        let cursor_marker = if state.message_view.cursor == Some(idx) {
+            ">"
+        } else {
+            " "
+        };
+        let selected_marker = if state.message_view.selected_ids.contains(&message.id) {
+            "x"
+        } else {
+            " "
+        };
+        let match_marker = if search_matches.contains(&idx) {
+            "*"
+        } else {
+            " "
+        };
+        let timestamp = if message.timestamp.is_empty() {
+            String::new()
+        } else {
+            format!("[{}] ", message.timestamp)
+        };
+        let header = format!(
+            "{} [{}{}] {}{}: ",
+            cursor_marker, selected_marker, match_marker, timestamp, message.author
+        );
+        let mut body_lines = message.body.lines();
+        if let Some(first_line) = body_lines.next() {
+            lines.push(format!("{}{}", header, first_line));
+            let indent = " ".repeat(header.chars().count());
+            for line in body_lines {
+                lines.push(format!("{}{}", indent, line));
+            }
+        } else {
+            lines.push(header);
+        }
+    }
+    lines
+}
+
+fn message_max_line_width(state: &UiState) -> usize {
+    build_message_lines(state)
+        .iter()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0)
 }
 
 fn build_log_text(state: &UiState) -> (String, u16) {
@@ -622,7 +728,7 @@ mod tests {
     #[test]
     fn message_viewport_page_size_reserves_composer_and_border() {
         let area = Rect::new(0, 0, 10, 10);
-        assert_eq!(message_viewport_page_size(area, DEFAULT_CHAT_LIST_WIDTH), 5);
+        assert_eq!(message_viewport_page_size(area, DEFAULT_CHAT_LIST_WIDTH), 4);
     }
 
     #[test]
@@ -639,5 +745,28 @@ mod tests {
         };
 
         assert_eq!(chat_list_max_scroll(&state), 7);
+    }
+
+    #[test]
+    fn message_max_scroll_accounts_for_multiline_messages() {
+        let mut state = UiState::default();
+        state.message_view.page_size = 2;
+        state.messages = vec![
+            MessageItem {
+                id: 1,
+                author: "Ada".to_string(),
+                timestamp: "09:12".to_string(),
+                body: "first\nsecond\nthird".to_string(),
+            },
+            MessageItem {
+                id: 2,
+                author: "You".to_string(),
+                timestamp: "09:13".to_string(),
+                body: "last".to_string(),
+            },
+        ];
+
+        assert_eq!(message_line_offset(&state.messages, 1), 3);
+        assert_eq!(message_max_scroll(&state), 2);
     }
 }

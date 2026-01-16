@@ -23,7 +23,7 @@ use ui::interaction::{handle_ui_key, KeymapStyle};
 use ui::view::UiState;
 use ui::view::{
     chat_list_max_scroll, chat_list_viewport_width, log_view_max_scroll, log_window_page_size,
-    message_viewport_page_size,
+    message_max_horizontal_scroll, message_viewport_page_size, message_viewport_width,
 };
 
 use crate::ui_state::UiCacheBridge;
@@ -171,6 +171,18 @@ fn apply_page_size(state: &mut UiState, terminal_area: Rect) {
     let max_log_scroll = log_view_max_scroll(state);
     if state.log_view.scroll_offset > max_log_scroll {
         state.log_view.scroll_offset = max_log_scroll;
+    }
+    let viewport_width = message_viewport_width(terminal_area, state.chat_list_width);
+    if state.message_viewport_width != viewport_width {
+        state.message_viewport_width = viewport_width;
+    }
+    let max_scroll = ui::view::message_max_scroll(state);
+    if state.message_view.scroll_offset > max_scroll {
+        state.message_view.scroll_offset = max_scroll;
+    }
+    let max_horizontal = message_max_horizontal_scroll(state);
+    if state.message_view.scroll_horizontal > max_horizontal {
+        state.message_view.scroll_horizontal = max_horizontal;
     }
 }
 
@@ -356,7 +368,7 @@ mod tests {
     #[test]
     fn message_page_size_reserves_composer_and_border() {
         let area = Rect::new(0, 0, 10, 10);
-        assert_eq!(message_page_size(area, 32), 5);
+        assert_eq!(message_page_size(area, 32), 4);
     }
 
     #[test]
