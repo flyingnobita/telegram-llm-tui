@@ -21,3 +21,4 @@
 
 # mise local overrides
 .mise.local.toml
+/data/
