@@ -73,6 +73,33 @@ fn base_message(
     }
 }
 
+fn base_service_message(
+    user_id: i64,
+    chat_user_id: i64,
+    message_id: i32,
+    date: i32,
+    action: tl::enums::MessageAction,
+) -> tl::types::MessageService {
+    tl::types::MessageService {
+        out: false,
+        mentioned: false,
+        media_unread: false,
+        reactions_are_possible: false,
+        silent: false,
+        post: false,
+        legacy: false,
+        id: message_id,
+        from_id: Some(peer_user(user_id)),
+        peer_id: peer_user(chat_user_id),
+        saved_peer_id: None,
+        reply_to: None,
+        date,
+        action,
+        reactions: None,
+        ttl_period: None,
+    }
+}
+
 fn wrap_raw_update(update: tl::enums::Update, state: State) -> Update {
     Update::Raw(Raw { raw: update, state })
 }
@@ -97,6 +124,38 @@ fn maps_new_message_update() {
             assert!(payload.author_name.is_none());
             assert_eq!(payload.timestamp, 111);
             assert_eq!(payload.text, "hello");
+            assert!(!payload.outgoing);
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+}
+
+#[test]
+fn maps_service_message_update() {
+    let mapper = EventMapper::new();
+    let action = tl::types::MessageActionChatAddUser { users: vec![1001] };
+    let message = base_service_message(
+        1001,
+        1001,
+        77,
+        123,
+        tl::enums::MessageAction::ChatAddUser(action),
+    );
+    let update = tl::types::UpdateNewMessage {
+        message: tl::enums::Message::Service(message),
+        pts: 1,
+        pts_count: 1,
+    };
+    let update = wrap_raw_update(tl::enums::Update::NewMessage(update), state_with_date(999));
+
+    let event = mapper.map_update(&update).expect("expected domain event");
+    match event {
+        DomainEvent::MessageNew(payload) => {
+            assert_eq!(payload.chat_id, ChatId(1001));
+            assert_eq!(payload.message_id, MessageId(77));
+            assert_eq!(payload.author_id, UserId(1001));
+            assert_eq!(payload.timestamp, 123);
+            assert_eq!(payload.text, "[Service] User joined");
             assert!(!payload.outgoing);
         }
         other => panic!("unexpected event: {other:?}"),

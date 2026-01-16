@@ -45,3 +45,4 @@
 - User can log in, select a chat, read history, and send a message.
 - User can select messages, generate an LLM draft, edit it, and send.
 - App recovers from temporary disconnect without losing drafts.
+- Render service messages with placeholder text in history views.

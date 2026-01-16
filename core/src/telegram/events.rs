@@ -103,7 +103,7 @@ impl EventMapper {
     }
 
     fn map_message_new(&self, message: &GrammersMessage) -> Option<DomainEvent> {
-        let fields = self.parse_message(&message.raw)?;
+        let fields = parse_message(&message.raw)?;
         let author_name = resolve_sender_display_name(message.sender());
         Some(DomainEvent::MessageNew(MessageNew {
             chat_id: fields.chat_id,
@@ -117,7 +117,7 @@ impl EventMapper {
     }
 
     fn map_message_edited(&self, message: &GrammersMessage) -> Option<DomainEvent> {
-        let fields = self.parse_message(&message.raw)?;
+        let fields = parse_message(&message.raw)?;
         let editor_name = resolve_sender_display_name(message.sender());
         let timestamp = fields.edit_date.unwrap_or(fields.date);
         Some(DomainEvent::MessageEdited(MessageEdited {
@@ -132,7 +132,7 @@ impl EventMapper {
     }
 
     fn map_raw_message_new(&self, message: &tl::enums::Message) -> Option<DomainEvent> {
-        let fields = self.parse_message(message)?;
+        let fields = parse_message(message)?;
         Some(DomainEvent::MessageNew(MessageNew {
             chat_id: fields.chat_id,
             message_id: fields.message_id,
@@ -145,7 +145,7 @@ impl EventMapper {
     }
 
     fn map_raw_message_edited(&self, message: &tl::enums::Message) -> Option<DomainEvent> {
-        let fields = self.parse_message(message)?;
+        let fields = parse_message(message)?;
         let timestamp = fields.edit_date.unwrap_or(fields.date);
         Some(DomainEvent::MessageEdited(MessageEdited {
             chat_id: fields.chat_id,
@@ -187,39 +187,6 @@ impl EventMapper {
             user_id: UserId(user_id),
             timestamp,
         }))
-    }
-
-    fn parse_message(&self, message: &tl::enums::Message) -> Option<ParsedMessage> {
-        match message {
-            tl::enums::Message::Message(message) => {
-                let chat_id = ChatId(PeerId::from(message.peer_id.clone()).bot_api_dialog_id());
-                let author_peer = message.from_id.as_ref().or(if message.out {
-                    None
-                } else {
-                    Some(&message.peer_id)
-                });
-                let author_id = match author_peer.and_then(user_id_from_peer) {
-                    Some(author_id) => author_id,
-                    None => {
-                        warn!(peer = ?message.peer_id, "message missing author user id");
-                        return None;
-                    }
-                };
-                Some(ParsedMessage {
-                    chat_id,
-                    message_id: MessageId(message.id as i64),
-                    author_id,
-                    date: message.date as i64,
-                    edit_date: message.edit_date.map(|value| value as i64),
-                    text: message.message.clone(),
-                    outgoing: message.out,
-                })
-            }
-            _ => {
-                warn!(message = ?message, "unsupported message variant");
-                None
-            }
-        }
     }
 }
 
@@ -313,14 +280,99 @@ pub fn spawn_domain_event_pump(
     })
 }
 
-struct ParsedMessage {
-    chat_id: ChatId,
-    message_id: MessageId,
-    author_id: UserId,
-    date: i64,
-    edit_date: Option<i64>,
-    text: String,
-    outgoing: bool,
+pub(crate) struct ParsedMessage {
+    pub(crate) chat_id: ChatId,
+    pub(crate) message_id: MessageId,
+    pub(crate) author_id: UserId,
+    pub(crate) date: i64,
+    pub(crate) edit_date: Option<i64>,
+    pub(crate) text: String,
+    pub(crate) outgoing: bool,
+}
+
+pub(crate) fn parse_message(message: &tl::enums::Message) -> Option<ParsedMessage> {
+    match message {
+        tl::enums::Message::Message(message) => {
+            let chat_id = ChatId(PeerId::from(message.peer_id.clone()).bot_api_dialog_id());
+            let author_peer = message.from_id.as_ref().or(if message.out {
+                None
+            } else {
+                Some(&message.peer_id)
+            });
+            let author_id = match author_peer.and_then(user_id_from_peer) {
+                Some(author_id) => author_id,
+                None => {
+                    warn!(peer = ?message.peer_id, "message missing author user id");
+                    return None;
+                }
+            };
+            Some(ParsedMessage {
+                chat_id,
+                message_id: MessageId(message.id as i64),
+                author_id,
+                date: message.date as i64,
+                edit_date: message.edit_date.map(|value| value as i64),
+                text: message.message.clone(),
+                outgoing: message.out,
+            })
+        }
+        tl::enums::Message::Service(message) => {
+            let chat_id = ChatId(PeerId::from(message.peer_id.clone()).bot_api_dialog_id());
+            let author_peer = message.from_id.as_ref().or(if message.out {
+                None
+            } else {
+                Some(&message.peer_id)
+            });
+            let author_id = match author_peer.and_then(user_id_from_peer) {
+                Some(author_id) => author_id,
+                None => {
+                    warn!(peer = ?message.peer_id, "message missing author user id");
+                    return None;
+                }
+            };
+            Some(ParsedMessage {
+                chat_id,
+                message_id: MessageId(message.id as i64),
+                author_id,
+                date: message.date as i64,
+                edit_date: None,
+                text: service_action_text(&message.action),
+                outgoing: message.out,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn service_action_text(action: &tl::enums::MessageAction) -> String {
+    let detail = match action {
+        tl::enums::MessageAction::ChatAddUser(action) => {
+            if action.users.len() == 1 {
+                "User joined".to_string()
+            } else {
+                format!("{} users joined", action.users.len())
+            }
+        }
+        tl::enums::MessageAction::ChatDeleteUser(_) => "User left".to_string(),
+        tl::enums::MessageAction::ChatJoinedByLink(_) => "Joined by link".to_string(),
+        tl::enums::MessageAction::ChatJoinedByRequest => "Joined by request".to_string(),
+        tl::enums::MessageAction::ChatCreate(action) => {
+            format!("Chat created: {}", action.title)
+        }
+        tl::enums::MessageAction::ChatEditTitle(action) => {
+            format!("Chat title changed to \"{}\"", action.title)
+        }
+        tl::enums::MessageAction::ChatEditPhoto(_) => "Chat photo updated".to_string(),
+        tl::enums::MessageAction::ChatDeletePhoto => "Chat photo removed".to_string(),
+        tl::enums::MessageAction::ChannelCreate(_) => "Channel created".to_string(),
+        tl::enums::MessageAction::PinMessage => "Message pinned".to_string(),
+        tl::enums::MessageAction::HistoryClear => "History cleared".to_string(),
+        tl::enums::MessageAction::ContactSignUp => "Contact joined Telegram".to_string(),
+        tl::enums::MessageAction::CustomAction(action) => action.message.clone(),
+        _ => format!("{action:?}"),
+    };
+
+    format!("[Service] {detail}")
 }
 
 fn user_id_from_peer(peer: &tl::enums::Peer) -> Option<UserId> {
