@@ -2,9 +2,6 @@
 /target/
 **/*.rs.bk
 /data/
-!/data/
-!/data/cache.sqlite
-!/data/telegram.session
 /logs/
 
 # Env files (dev-only secrets)
