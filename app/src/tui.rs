@@ -22,8 +22,10 @@ use telegram_llm_core::telegram::{CacheManager, EventReceiver};
 use ui::interaction::{handle_ui_key, KeymapStyle};
 use ui::view::UiState;
 use ui::view::{
-    chat_list_max_scroll, chat_list_viewport_width, log_view_max_scroll, log_window_page_size,
-    message_max_horizontal_scroll, message_viewport_page_size, message_viewport_width,
+    chat_list_text_area, clamp_chat_list_scroll, composer_text_area,
+    ensure_chat_list_selection_visible, log_view_max_horizontal_scroll, log_view_max_scroll,
+    log_window_text_area, message_max_horizontal_scroll, message_viewport_page_size,
+    message_viewport_width,
 };
 
 use crate::ui_state::UiCacheBridge;
@@ -158,40 +160,47 @@ fn is_exit_key(key: &KeyEvent) -> bool {
 }
 
 fn apply_page_size(state: &mut UiState, terminal_area: Rect) {
-    let chat_viewport_width = chat_list_viewport_width(terminal_area, state.chat_list_width);
-    if state.chat_list_viewport_width != chat_viewport_width {
-        state.chat_list_viewport_width = chat_viewport_width;
-    }
-    let max_scroll = chat_list_max_scroll(state);
-    if state.chat_list_scroll > max_scroll {
-        state.chat_list_scroll = max_scroll;
-    }
+    let chat_text_area = chat_list_text_area(terminal_area, state.chat_list_width);
+    state.chat_list_pane.viewport.width = chat_text_area.width;
+    state.chat_list_pane.viewport.height = chat_text_area.height;
+    state.chat_list_pane.page_size = chat_text_area.height.max(1) as usize;
+    clamp_chat_list_scroll(state);
+    ensure_chat_list_selection_visible(state);
+    clamp_chat_list_scroll(state);
 
     let page_size = message_page_size(terminal_area, state.chat_list_width);
-    if state.message_view.page_size != page_size {
-        state.message_view.page_size = page_size;
+    if state.message_view.pane.page_size != page_size {
+        state.message_view.pane.page_size = page_size;
     }
+    state.message_view.pane.viewport.height = page_size.max(1) as u16;
 
-    let log_page_size = log_window_page_size(terminal_area);
-    if state.log_view.page_size != log_page_size {
-        state.log_view.page_size = log_page_size;
-    }
+    let log_text_area = log_window_text_area(terminal_area);
+    state.log_view.pane.viewport.width = log_text_area.width;
+    state.log_view.pane.viewport.height = log_text_area.height;
+    state.log_view.pane.page_size = log_text_area.height.max(1) as usize;
     let max_log_scroll = log_view_max_scroll(state);
-    if state.log_view.scroll_offset > max_log_scroll {
-        state.log_view.scroll_offset = max_log_scroll;
+    if state.log_view.pane.scroll_vertical > max_log_scroll {
+        state.log_view.pane.scroll_vertical = max_log_scroll;
+    }
+    let max_log_horizontal = log_view_max_horizontal_scroll(state);
+    if state.log_view.pane.scroll_horizontal > max_log_horizontal {
+        state.log_view.pane.scroll_horizontal = max_log_horizontal;
     }
     let viewport_width = message_viewport_width(terminal_area, state.chat_list_width);
-    if state.message_viewport_width != viewport_width {
-        state.message_viewport_width = viewport_width;
-    }
+    state.message_view.pane.viewport.width = viewport_width;
     let max_scroll = ui::view::message_max_scroll(state);
-    if state.message_view.scroll_offset > max_scroll {
-        state.message_view.scroll_offset = max_scroll;
+    if state.message_view.pane.scroll_vertical > max_scroll {
+        state.message_view.pane.scroll_vertical = max_scroll;
     }
     let max_horizontal = message_max_horizontal_scroll(state);
-    if state.message_view.scroll_horizontal > max_horizontal {
-        state.message_view.scroll_horizontal = max_horizontal;
+    if state.message_view.pane.scroll_horizontal > max_horizontal {
+        state.message_view.pane.scroll_horizontal = max_horizontal;
     }
+
+    let composer_area = composer_text_area(terminal_area, state.chat_list_width);
+    state.composer_pane.viewport.width = composer_area.width;
+    state.composer_pane.viewport.height = composer_area.height;
+    state.composer_pane.page_size = composer_area.height.max(1) as usize;
 }
 
 fn message_page_size(terminal_area: Rect, chat_list_width: u16) -> usize {
@@ -228,8 +237,8 @@ fn maybe_refresh_logs(
         }
     }
     let max_scroll = log_view_max_scroll(state);
-    if was_at_bottom || state.log_view.scroll_offset > max_scroll {
-        state.log_view.scroll_offset = max_scroll;
+    if was_at_bottom || state.log_view.pane.scroll_vertical > max_scroll {
+        state.log_view.pane.scroll_vertical = max_scroll;
     }
     *last_refresh = Some(now);
 }
@@ -245,7 +254,7 @@ fn read_log_lines(path: &Path, max_lines: usize) -> io::Result<Vec<String>> {
 }
 
 fn is_log_view_at_bottom(state: &UiState) -> bool {
-    state.log_view.scroll_offset >= log_view_max_scroll(state)
+    state.log_view.pane.scroll_vertical >= log_view_max_scroll(state)
 }
 
 fn spawn_input_thread(

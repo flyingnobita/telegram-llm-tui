@@ -3,14 +3,14 @@ use std::collections::BTreeSet;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{
-        Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Wrap,
-    },
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
 use crate::input::InputState;
+use crate::pane::{
+    pane_layout, render_pane, render_scrollbars, PaneConfig, PaneMetrics, PaneState,
+};
 
 const DEFAULT_CHAT_LIST_WIDTH: u16 = 32;
 
@@ -105,23 +105,23 @@ impl MessageSearchState {
 
 #[derive(Debug, Clone)]
 pub struct MessageViewState {
-    pub scroll_offset: usize,
-    pub scroll_horizontal: usize,
+    pub pane: PaneState,
     pub cursor: Option<usize>,
     pub selected_ids: BTreeSet<i64>,
     pub search: MessageSearchState,
-    pub page_size: usize,
 }
 
 impl Default for MessageViewState {
     fn default() -> Self {
+        let pane = PaneState {
+            page_size: 8,
+            ..PaneState::default()
+        };
         Self {
-            scroll_offset: 0,
-            scroll_horizontal: 0,
+            pane,
             cursor: None,
             selected_ids: BTreeSet::new(),
             search: MessageSearchState::default(),
-            page_size: 8,
         }
     }
 }
@@ -133,13 +133,16 @@ impl MessageViewState {
 
         if messages.is_empty() {
             self.cursor = None;
-            self.scroll_offset = 0;
-            self.scroll_horizontal = 0;
+            self.pane.scroll_vertical = 0;
+            self.pane.scroll_horizontal = 0;
         } else {
             let max_index = messages.len().saturating_sub(1);
             self.cursor = Some(self.cursor.unwrap_or(max_index).min(max_index));
-            let max_scroll = message_max_scroll_for(messages, self.page_size);
-            self.scroll_offset = self.scroll_offset.min(max_scroll);
+            let metrics = PaneMetrics {
+                line_count: message_total_lines(messages),
+                max_line_width: message_max_line_width_for(messages),
+            };
+            self.pane.clamp_offsets(metrics, PaneConfig::message_pane());
         }
 
         self.search.recompute_matches(messages);
@@ -185,16 +188,18 @@ pub struct CommandPaletteState {
 #[derive(Debug, Clone)]
 pub struct LogViewState {
     pub is_open: bool,
-    pub scroll_offset: usize,
-    pub page_size: usize,
+    pub pane: PaneState,
 }
 
 impl Default for LogViewState {
     fn default() -> Self {
+        let pane = PaneState {
+            page_size: 8,
+            ..PaneState::default()
+        };
         Self {
             is_open: false,
-            scroll_offset: 0,
-            page_size: 8,
+            pane,
         }
     }
 }
@@ -210,10 +215,9 @@ pub struct UiState {
     pub command_palette: CommandPaletteState,
     pub logs: Vec<String>,
     pub log_view: LogViewState,
+    pub chat_list_pane: PaneState,
+    pub composer_pane: PaneState,
     pub chat_list_width: u16,
-    pub chat_list_scroll: usize,
-    pub chat_list_viewport_width: u16,
-    pub message_viewport_width: u16,
 }
 
 impl Default for UiState {
@@ -228,10 +232,9 @@ impl Default for UiState {
             command_palette: CommandPaletteState::default(),
             logs: Vec::new(),
             log_view: LogViewState::default(),
+            chat_list_pane: PaneState::default(),
+            composer_pane: PaneState::default(),
             chat_list_width: DEFAULT_CHAT_LIST_WIDTH,
-            chat_list_scroll: 0,
-            chat_list_viewport_width: 0,
-            message_viewport_width: 0,
         }
     }
 }
@@ -267,61 +270,115 @@ pub fn message_viewport_area(area: Rect, chat_list_width: u16) -> Rect {
     layout_areas(area, chat_list_width).messages
 }
 
+pub fn composer_viewport_area(area: Rect, chat_list_width: u16) -> Rect {
+    layout_areas(area, chat_list_width).composer
+}
+
 pub fn message_viewport_page_size(area: Rect, chat_list_width: u16) -> usize {
     let message_area = message_viewport_area(area, chat_list_width);
-    let inner = Block::default().borders(Borders::ALL).inner(message_area);
-    inner.height.saturating_sub(1).max(1) as usize
+    let block = Block::default().borders(Borders::ALL);
+    let layout = pane_layout(message_area, &block, PaneConfig::message_pane());
+    layout.text_area.height.max(1) as usize
 }
 
 pub fn message_viewport_width(area: Rect, chat_list_width: u16) -> u16 {
     let message_area = message_viewport_area(area, chat_list_width);
-    let inner = Block::default().borders(Borders::ALL).inner(message_area);
-    inner.width.saturating_sub(1).max(1)
+    let block = Block::default().borders(Borders::ALL);
+    let layout = pane_layout(message_area, &block, PaneConfig::message_pane());
+    layout.text_area.width.max(1)
 }
 
-pub fn chat_list_viewport_width(area: Rect, chat_list_width: u16) -> u16 {
+pub fn composer_text_area(area: Rect, chat_list_width: u16) -> Rect {
+    let composer_area = composer_viewport_area(area, chat_list_width);
+    let block = Block::default().borders(Borders::ALL);
+    let layout = pane_layout(composer_area, &block, PaneConfig::composer_pane());
+    layout.text_area
+}
+
+pub fn chat_list_text_area(area: Rect, chat_list_width: u16) -> Rect {
     let chat_area = layout_areas(area, chat_list_width).chat_list;
-    Block::default()
-        .borders(Borders::ALL)
-        .inner(chat_area)
-        .width
+    let block = Block::default().borders(Borders::ALL);
+    let layout = pane_layout(chat_area, &block, PaneConfig::chat_list_pane());
+    layout.text_area
 }
 
-pub fn chat_list_max_scroll(state: &UiState) -> usize {
-    let viewport_width = state.chat_list_viewport_width.max(1) as usize;
+pub fn chat_list_metrics(state: &UiState) -> PaneMetrics {
     let labels: Vec<String> = if state.chats.is_empty() {
         vec!["No chats".to_string()]
     } else {
         state.chats.iter().map(ChatListItem::label).collect()
     };
-    let max_label_len = labels
-        .iter()
-        .map(|label| label.chars().count())
-        .max()
-        .unwrap_or(0);
-    max_label_len.saturating_sub(viewport_width)
+    PaneMetrics::from_lines(&labels)
+}
+
+pub fn chat_list_max_vertical_scroll(state: &UiState) -> usize {
+    state
+        .chat_list_pane
+        .max_vertical_scroll(chat_list_metrics(state), PaneConfig::chat_list_pane())
+}
+
+pub fn chat_list_max_horizontal_scroll(state: &UiState) -> usize {
+    state
+        .chat_list_pane
+        .max_horizontal_scroll(chat_list_metrics(state), PaneConfig::chat_list_pane())
+}
+
+pub fn clamp_chat_list_scroll(state: &mut UiState) {
+    let metrics = chat_list_metrics(state);
+    state
+        .chat_list_pane
+        .clamp_offsets(metrics, PaneConfig::chat_list_pane());
+}
+
+pub fn ensure_chat_list_selection_visible(state: &mut UiState) {
+    let Some(selected) = state.chats.iter().position(|chat| chat.is_selected) else {
+        return;
+    };
+    let page_size = state.chat_list_pane.page_size.max(1);
+    let scroll = state.chat_list_pane.scroll_vertical;
+    if selected < scroll {
+        state.chat_list_pane.scroll_vertical = selected;
+    } else if selected >= scroll + page_size {
+        state.chat_list_pane.scroll_vertical = selected + 1 - page_size;
+    }
 }
 
 pub fn log_view_max_scroll(state: &UiState) -> usize {
-    let page_size = state.log_view.page_size.max(1);
-    let line_count = state.logs.len().max(1);
-    line_count.saturating_sub(page_size)
+    let metrics = log_pane_metrics(state);
+    state
+        .log_view
+        .pane
+        .max_vertical_scroll(metrics, PaneConfig::log_pane())
+}
+
+pub fn log_view_max_horizontal_scroll(state: &UiState) -> usize {
+    let metrics = log_pane_metrics(state);
+    state
+        .log_view
+        .pane
+        .max_horizontal_scroll(metrics, PaneConfig::log_pane())
 }
 
 pub fn message_max_scroll(state: &UiState) -> usize {
-    message_max_scroll_for(&state.messages, state.message_view.page_size)
+    let metrics = PaneMetrics {
+        line_count: message_total_lines(&state.messages),
+        max_line_width: 0,
+    };
+    state
+        .message_view
+        .pane
+        .max_vertical_scroll(metrics, PaneConfig::message_pane())
 }
 
 pub fn message_max_horizontal_scroll(state: &UiState) -> usize {
-    let viewport_width = state.message_viewport_width.max(1) as usize;
-    let max_line_width = message_max_line_width(state);
-    max_line_width.saturating_sub(viewport_width)
-}
-
-pub(crate) fn message_max_scroll_for(messages: &[MessageItem], page_size: usize) -> usize {
-    let total_lines = message_total_lines(messages);
-    let page = page_size.max(1);
-    total_lines.saturating_sub(page)
+    let metrics = PaneMetrics {
+        line_count: 0,
+        max_line_width: message_max_line_width(state),
+    };
+    state
+        .message_view
+        .pane
+        .max_horizontal_scroll(metrics, PaneConfig::message_pane())
 }
 
 pub(crate) fn message_line_offset(messages: &[MessageItem], index: usize) -> usize {
@@ -335,6 +392,29 @@ fn message_total_lines(messages: &[MessageItem]) -> usize {
 fn message_line_count(message: &MessageItem) -> usize {
     let lines = message.body.lines().count();
     lines.max(1)
+}
+
+fn message_max_line_width_for(messages: &[MessageItem]) -> usize {
+    let mut max_width = 0;
+    for message in messages {
+        let timestamp = if message.timestamp.is_empty() {
+            String::new()
+        } else {
+            format!("[{}] ", message.timestamp)
+        };
+        let header = format!("> [  ] {}{}: ", timestamp, message.author);
+        let header_width = header.chars().count();
+        let mut body_lines = message.body.lines();
+        if let Some(first_line) = body_lines.next() {
+            max_width = max_width.max(header_width + first_line.chars().count());
+            for line in body_lines {
+                max_width = max_width.max(header_width + line.chars().count());
+            }
+        } else {
+            max_width = max_width.max(header_width);
+        }
+    }
+    max_width
 }
 
 fn clamp_chat_list_width(area_width: u16, desired: u16) -> u16 {
@@ -373,18 +453,8 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
     } else {
         state.chats.iter().map(ChatListItem::label).collect()
     };
-    let chat_inner_width = Block::default()
-        .borders(Borders::ALL)
-        .inner(layout.chat_list)
-        .width
-        .max(1) as usize;
-    let max_label_len = chat_labels
-        .iter()
-        .map(|label| label.chars().count())
-        .max()
-        .unwrap_or(0);
-    let max_scroll = max_label_len.saturating_sub(chat_inner_width);
-    let scroll_offset = state.chat_list_scroll.min(max_scroll);
+    let chat_metrics = PaneMetrics::from_lines(&chat_labels);
+    let scroll_offset = state.chat_list_pane.scroll_horizontal;
     let chat_items: Vec<ListItem> = chat_labels
         .into_iter()
         .map(|label| ListItem::new(apply_horizontal_scroll(&label, scroll_offset)))
@@ -393,78 +463,57 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
     let mut chat_state = ListState::default();
     let selected_chat = state.chats.iter().position(|chat| chat.is_selected);
     chat_state.select(selected_chat);
+    *chat_state.offset_mut() = state.chat_list_pane.scroll_vertical;
 
     let chat_block = Block::default()
         .title("Chats")
         .borders(Borders::ALL)
         .border_style(focus_border_style(chat_focused));
-    let chat_list = List::new(chat_items)
-        .block(chat_block)
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+    let chat_list =
+        List::new(chat_items).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
-    let (message_text, scroll_offset, scroll_horizontal) = build_message_text(state);
+    let message_content = message_pane_content(state);
     let message_title = message_view_title(state);
 
     let message_block = Block::default()
         .title(message_title)
         .borders(Borders::ALL)
         .border_style(focus_border_style(message_focused));
-    let message_inner = message_block.inner(layout.messages);
 
-    let scrollbar_width = if message_inner.width > 1 { 1 } else { 0 };
-    let scrollbar_height = if message_inner.height > 1 { 1 } else { 0 };
-    let text_area = Rect {
-        x: message_inner.x,
-        y: message_inner.y,
-        width: message_inner.width.saturating_sub(scrollbar_width).max(1),
-        height: message_inner.height.saturating_sub(scrollbar_height).max(1),
-    };
-
-    let message_view = Paragraph::new(message_text).scroll((scroll_offset, scroll_horizontal));
-
-    let composer = Paragraph::new(state.input.text.as_str()).block(
-        Block::default()
-            .title("Composer")
-            .borders(Borders::ALL)
-            .border_style(focus_border_style(composer_focused)),
+    let chat_layout = pane_layout(layout.chat_list, &chat_block, PaneConfig::chat_list_pane());
+    frame.render_widget(chat_block, layout.chat_list);
+    frame.render_stateful_widget(chat_list, chat_layout.text_area, &mut chat_state);
+    render_scrollbars(
+        frame,
+        chat_layout,
+        &state.chat_list_pane,
+        chat_metrics,
+        PaneConfig::chat_list_pane(),
+    );
+    render_pane(
+        frame,
+        layout.messages,
+        message_block,
+        message_content.text.as_str(),
+        &state.message_view.pane,
+        message_content.metrics,
+        PaneConfig::message_pane(),
     );
 
-    frame.render_stateful_widget(chat_list, layout.chat_list, &mut chat_state);
-    frame.render_widget(message_block, layout.messages);
-    frame.render_widget(message_view, text_area);
-
-    let mut vertical_scroll_state = ScrollbarState::new(message_total_lines(&state.messages))
-        .position(state.message_view.scroll_offset);
-    if scrollbar_width > 0 {
-        let vertical_area = Rect {
-            x: text_area.x + text_area.width,
-            y: text_area.y,
-            width: scrollbar_width,
-            height: text_area.height,
-        };
-        frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight),
-            vertical_area,
-            &mut vertical_scroll_state,
-        );
-    }
-
-    let mut horizontal_scroll_state = ScrollbarState::new(message_max_line_width(state))
-        .position(state.message_view.scroll_horizontal);
-    if scrollbar_height > 0 {
-        let horizontal_area = Rect {
-            x: text_area.x,
-            y: text_area.y + text_area.height,
-            width: text_area.width,
-            height: scrollbar_height,
-        };
-        frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::HorizontalBottom),
-            horizontal_area,
-            &mut horizontal_scroll_state,
-        );
-    }
-    frame.render_widget(composer, layout.composer);
+    let composer_block = Block::default()
+        .title("Composer")
+        .borders(Borders::ALL)
+        .border_style(focus_border_style(composer_focused));
+    let composer_metrics = PaneMetrics::from_text(state.input.text.as_str());
+    render_pane(
+        frame,
+        layout.composer,
+        composer_block,
+        state.input.text.as_str(),
+        &state.composer_pane,
+        composer_metrics,
+        PaneConfig::composer_pane(),
+    );
 
     if state.draft_modal.is_open {
         draw_draft_modal(frame, state, area);
@@ -499,30 +548,6 @@ fn message_view_title(state: &UiState) -> String {
     } else {
         "Messages".to_string()
     }
-}
-
-fn build_message_text(state: &UiState) -> (String, u16, u16) {
-    if state.messages.is_empty() {
-        return ("No messages".to_string(), 0, 0);
-    }
-
-    let lines = build_message_lines(state);
-
-    let max_scroll = message_max_scroll(state);
-    let scroll_offset = state
-        .message_view
-        .scroll_offset
-        .min(max_scroll)
-        .min(u16::MAX as usize) as u16;
-
-    let max_horizontal = message_max_horizontal_scroll(state);
-    let scroll_horizontal = state
-        .message_view
-        .scroll_horizontal
-        .min(max_horizontal)
-        .min(u16::MAX as usize) as u16;
-
-    (lines.join("\n"), scroll_offset, scroll_horizontal)
 }
 
 fn build_message_lines(state: &UiState) -> Vec<String> {
@@ -567,42 +592,73 @@ fn build_message_lines(state: &UiState) -> Vec<String> {
     lines
 }
 
-fn message_max_line_width(state: &UiState) -> usize {
-    build_message_lines(state)
-        .iter()
-        .map(|line| line.chars().count())
-        .max()
-        .unwrap_or(0)
+struct PaneContent {
+    text: String,
+    metrics: PaneMetrics,
 }
 
-fn build_log_text(state: &UiState) -> (String, u16) {
-    if state.logs.is_empty() {
-        return ("No logs".to_string(), 0);
+fn message_pane_content(state: &UiState) -> PaneContent {
+    let lines = if state.messages.is_empty() {
+        vec!["No messages".to_string()]
+    } else {
+        build_message_lines(state)
+    };
+    let metrics = PaneMetrics::from_lines(&lines);
+    PaneContent {
+        text: lines.join("\n"),
+        metrics,
     }
+}
 
-    let max_scroll = log_view_max_scroll(state);
-    let scroll_offset = state
-        .log_view
-        .scroll_offset
-        .min(max_scroll)
-        .min(u16::MAX as usize) as u16;
+fn message_max_line_width(state: &UiState) -> usize {
+    message_max_line_width_for(&state.messages)
+}
 
-    (state.logs.join("\n"), scroll_offset)
+fn log_pane_content(state: &UiState) -> PaneContent {
+    let lines = if state.logs.is_empty() {
+        vec!["No logs".to_string()]
+    } else {
+        state.logs.clone()
+    };
+    let metrics = log_pane_metrics(state);
+    PaneContent {
+        text: lines.join("\n"),
+        metrics,
+    }
+}
+
+fn log_pane_metrics(state: &UiState) -> PaneMetrics {
+    if state.logs.is_empty() {
+        return PaneMetrics::from_text("No logs");
+    }
+    let mut max_line_width = 0;
+    for line in &state.logs {
+        max_line_width = max_line_width.max(line.chars().count());
+    }
+    PaneMetrics {
+        line_count: state.logs.len(),
+        max_line_width,
+    }
 }
 
 fn draw_log_window(frame: &mut Frame, state: &UiState, area: Rect) {
     let log_area = log_window_area(area);
     frame.render_widget(Clear, log_area);
 
-    let (log_text, scroll_offset) = build_log_text(state);
-    let logs = Paragraph::new(log_text).scroll((scroll_offset, 0)).block(
-        Block::default()
-            .title("Logs")
-            .borders(Borders::ALL)
-            .border_style(focus_border_style(true)),
+    let log_content = log_pane_content(state);
+    let log_block = Block::default()
+        .title("Logs")
+        .borders(Borders::ALL)
+        .border_style(focus_border_style(true));
+    render_pane(
+        frame,
+        log_area,
+        log_block,
+        log_content.text.as_str(),
+        &state.log_view.pane,
+        log_content.metrics,
+        PaneConfig::log_pane(),
     );
-
-    frame.render_widget(logs, log_area);
 }
 
 fn draw_draft_modal(frame: &mut Frame, state: &UiState, area: Rect) {
@@ -677,13 +733,19 @@ fn draw_command_palette(frame: &mut Frame, state: &UiState, area: Rect) {
 }
 
 pub fn log_window_page_size(area: Rect) -> usize {
-    let log_area = log_window_area(area);
-    let inner = Block::default().borders(Borders::ALL).inner(log_area);
-    inner.height.max(1) as usize
+    let text_area = log_window_text_area(area);
+    text_area.height.max(1) as usize
 }
 
 fn log_window_area(area: Rect) -> Rect {
     centered_rect(area, 90, 90)
+}
+
+pub fn log_window_text_area(area: Rect) -> Rect {
+    let log_area = log_window_area(area);
+    let block = Block::default().borders(Borders::ALL);
+    let layout = pane_layout(log_area, &block, PaneConfig::log_pane());
+    layout.text_area
 }
 
 fn centered_rect(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
@@ -732,9 +794,8 @@ mod tests {
     }
 
     #[test]
-    fn chat_list_max_scroll_respects_viewport() {
-        let state = UiState {
-            chat_list_viewport_width: 8,
+    fn chat_list_max_horizontal_scroll_respects_viewport() {
+        let mut state = UiState {
             chats: vec![ChatListItem {
                 id: 1,
                 title: "Long Chat Title".to_string(),
@@ -743,14 +804,15 @@ mod tests {
             }],
             ..Default::default()
         };
+        state.chat_list_pane.viewport.width = 8;
 
-        assert_eq!(chat_list_max_scroll(&state), 7);
+        assert_eq!(chat_list_max_horizontal_scroll(&state), 7);
     }
 
     #[test]
     fn message_max_scroll_accounts_for_multiline_messages() {
         let mut state = UiState::default();
-        state.message_view.page_size = 2;
+        state.message_view.pane.page_size = 2;
         state.messages = vec![
             MessageItem {
                 id: 1,
