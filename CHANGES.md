@@ -1,5 +1,7 @@
 # Changes
 
+- Jan-17, 2026 - 01:48 PM +0800 - Hardened UI input cursor handling for Unicode
+  and aligned log hotkey documentation with Ctrl+L, with tests updated.
 - Jan-16, 2026 - 11:23 PM +0800 - Wired composer Enter to enqueue sends via the
   send pipeline, tracking dialog peers and adding submit-action tests.
 - Jan-16, 2026 - 11:00 PM +08 - Added `data/` to `.gitignore` to keep local cache/session files untracked.
