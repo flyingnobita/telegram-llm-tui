@@ -1,5 +1,7 @@
 # Changes
 
+- Jan-17, 2026 - 02:49 PM +0800 - Marked pending send pipeline items as failed
+  on stop to prevent hanging status watchers, with a new test.
 - Jan-17, 2026 - 02:35 PM +0800 - Added peer-aware author identities for
   non-user senders, persisted author names, and updated cache/UI mapping with
   new tests and docs.

@@ -16,6 +16,8 @@ use tracing::{info, warn};
 
 use crate::telegram::events::MessageId;
 
+const PIPELINE_STOPPED_ERROR: &str = "send pipeline stopped";
+
 #[derive(Debug, Clone)]
 pub struct SendPipelineConfig {
     pub queue_limit: usize,
@@ -332,10 +334,14 @@ async fn run_send_worker(
 
         tokio::select! {
             _ = stop_rx.changed() => {
+                drain_pending(&mut rx, &mut queue, PIPELINE_STOPPED_ERROR);
                 break;
             }
             command = rx.recv() => {
                 let Some(command) = command else {
+                    if !queue.is_empty() {
+                        fail_queue_items(&mut queue, PIPELINE_STOPPED_ERROR);
+                    }
                     break;
                 };
                 match command {
@@ -365,6 +371,44 @@ async fn run_send_worker(
             }
         }
     }
+}
+
+fn drain_pending(
+    rx: &mut mpsc::Receiver<SendCommand>,
+    queue: &mut BinaryHeap<QueueItem>,
+    reason: &str,
+) {
+    drain_queue_receiver(rx, reason);
+    if !queue.is_empty() {
+        fail_queue_items(queue, reason);
+    }
+}
+
+fn drain_queue_receiver(rx: &mut mpsc::Receiver<SendCommand>, reason: &str) {
+    loop {
+        match rx.try_recv() {
+            Ok(SendCommand::Enqueue { status, permit, .. }) => {
+                drop(permit);
+                fail_pending_item(&status, 0, reason);
+            }
+            Err(mpsc::error::TryRecvError::Empty) => break,
+            Err(mpsc::error::TryRecvError::Disconnected) => break,
+        }
+    }
+}
+
+fn fail_queue_items(queue: &mut BinaryHeap<QueueItem>, reason: &str) {
+    while let Some(item) = queue.pop() {
+        fail_pending_item(&item.status, item.attempts, reason);
+    }
+}
+
+fn fail_pending_item(status: &watch::Sender<SendStatus>, attempts: u32, reason: &str) {
+    let _ = status.send(SendStatus::Failed(SendFailure {
+        error: reason.to_string(),
+        attempts,
+        retryable: false,
+    }));
 }
 
 async fn process_queue_item(

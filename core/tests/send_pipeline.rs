@@ -230,3 +230,60 @@ async fn invalid_message_ids_fail_without_retry() {
 
     pipeline.stop().await;
 }
+
+#[tokio::test(start_paused = true)]
+async fn stop_marks_pending_items_failed() {
+    let rpc_error = RpcError {
+        code: 420,
+        name: "FLOOD_WAIT".to_string(),
+        value: Some(5),
+        caused_by: None,
+    };
+    let responses = vec![Err(SendError::Invocation(InvocationError::Rpc(rpc_error)))];
+    let transport = MockTransport::new(responses);
+    let config = SendPipelineConfig {
+        queue_limit: 2,
+        max_retry_attempts: Some(3),
+        retry_base_delay: Duration::from_millis(5),
+        retry_max_delay: Duration::from_millis(5),
+    };
+    let pipeline = spawn_send_pipeline(transport, config);
+
+    let ticket = pipeline.enqueue(send_request()).expect("enqueue");
+    let mut status_rx = ticket.status;
+
+    tokio::time::advance(Duration::from_millis(1)).await;
+    let queued = wait_for_status(&mut status_rx, |status| {
+        matches!(
+            status,
+            SendStatus::Queued {
+                attempt: 1,
+                next_retry_in: Some(delay)
+            } if *delay == Duration::from_secs(5)
+        )
+    })
+    .await;
+
+    assert!(matches!(
+        queued,
+        SendStatus::Queued {
+            attempt: 1,
+            next_retry_in: Some(_)
+        }
+    ));
+
+    pipeline.stop().await;
+
+    let failed = wait_for_status(&mut status_rx, |status| {
+        matches!(status, SendStatus::Failed(_))
+    })
+    .await;
+
+    match failed {
+        SendStatus::Failed(failure) => {
+            assert_eq!(failure.attempts, 1);
+            assert!(!failure.retryable);
+        }
+        other => panic!("expected failed status, got {other:?}"),
+    }
+}
