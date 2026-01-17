@@ -62,6 +62,7 @@ Tool versions are managed via mise-en-place.
 
 ## Configs
 
+- any hardcoded values should be placed in the config file, with a short description of the value and the values that it can take
 - config file location: `app/config/app.toml`
 
 ## Logging
