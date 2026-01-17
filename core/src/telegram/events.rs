@@ -17,11 +17,33 @@ pub struct MessageId(pub i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct UserId(pub i64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AuthorId {
+    User(UserId),
+    Chat(ChatId),
+}
+
+impl AuthorId {
+    pub fn as_user(self) -> Option<UserId> {
+        match self {
+            AuthorId::User(user_id) => Some(user_id),
+            AuthorId::Chat(_) => None,
+        }
+    }
+
+    pub fn as_chat(self) -> Option<ChatId> {
+        match self {
+            AuthorId::User(_) => None,
+            AuthorId::Chat(chat_id) => Some(chat_id),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageNew {
     pub chat_id: ChatId,
     pub message_id: MessageId,
-    pub author_id: UserId,
+    pub author_id: AuthorId,
     pub author_name: Option<String>,
     pub timestamp: i64,
     pub text: String,
@@ -32,7 +54,7 @@ pub struct MessageNew {
 pub struct MessageEdited {
     pub chat_id: ChatId,
     pub message_id: MessageId,
-    pub editor_id: UserId,
+    pub editor_id: AuthorId,
     pub editor_name: Option<String>,
     pub timestamp: i64,
     pub text: String,
@@ -104,7 +126,7 @@ impl EventMapper {
 
     fn map_message_new(&self, message: &GrammersMessage) -> Option<DomainEvent> {
         let fields = parse_message(&message.raw)?;
-        let author_name = resolve_sender_display_name(message.sender());
+        let author_name = resolve_sender_display_name(message.sender()).or(fields.author_name);
         Some(DomainEvent::MessageNew(MessageNew {
             chat_id: fields.chat_id,
             message_id: fields.message_id,
@@ -118,7 +140,7 @@ impl EventMapper {
 
     fn map_message_edited(&self, message: &GrammersMessage) -> Option<DomainEvent> {
         let fields = parse_message(&message.raw)?;
-        let editor_name = resolve_sender_display_name(message.sender());
+        let editor_name = resolve_sender_display_name(message.sender()).or(fields.author_name);
         let timestamp = fields.edit_date.unwrap_or(fields.date);
         Some(DomainEvent::MessageEdited(MessageEdited {
             chat_id: fields.chat_id,
@@ -137,7 +159,7 @@ impl EventMapper {
             chat_id: fields.chat_id,
             message_id: fields.message_id,
             author_id: fields.author_id,
-            author_name: None,
+            author_name: fields.author_name,
             timestamp: fields.date,
             text: fields.text,
             outgoing: fields.outgoing,
@@ -151,7 +173,7 @@ impl EventMapper {
             chat_id: fields.chat_id,
             message_id: fields.message_id,
             editor_id: fields.author_id,
-            editor_name: None,
+            editor_name: fields.author_name,
             timestamp,
             text: fields.text,
             outgoing: fields.outgoing,
@@ -283,7 +305,8 @@ pub fn spawn_domain_event_pump(
 pub(crate) struct ParsedMessage {
     pub(crate) chat_id: ChatId,
     pub(crate) message_id: MessageId,
-    pub(crate) author_id: UserId,
+    pub(crate) author_id: AuthorId,
+    pub(crate) author_name: Option<String>,
     pub(crate) date: i64,
     pub(crate) edit_date: Option<i64>,
     pub(crate) text: String,
@@ -294,22 +317,16 @@ pub(crate) fn parse_message(message: &tl::enums::Message) -> Option<ParsedMessag
     match message {
         tl::enums::Message::Message(message) => {
             let chat_id = ChatId(PeerId::from(message.peer_id.clone()).bot_api_dialog_id());
-            let author_peer = message.from_id.as_ref().or(if message.out {
-                None
-            } else {
-                Some(&message.peer_id)
-            });
-            let author_id = match author_peer.and_then(user_id_from_peer) {
-                Some(author_id) => author_id,
-                None => {
-                    warn!(peer = ?message.peer_id, "message missing author user id");
-                    return None;
-                }
-            };
+            let author_id =
+                resolve_author_id(message.from_id.as_ref(), &message.peer_id, message.out);
             Some(ParsedMessage {
                 chat_id,
                 message_id: MessageId(message.id as i64),
                 author_id,
+                author_name: message
+                    .post_author
+                    .clone()
+                    .filter(|name| !name.trim().is_empty()),
                 date: message.date as i64,
                 edit_date: message.edit_date.map(|value| value as i64),
                 text: message.message.clone(),
@@ -318,22 +335,13 @@ pub(crate) fn parse_message(message: &tl::enums::Message) -> Option<ParsedMessag
         }
         tl::enums::Message::Service(message) => {
             let chat_id = ChatId(PeerId::from(message.peer_id.clone()).bot_api_dialog_id());
-            let author_peer = message.from_id.as_ref().or(if message.out {
-                None
-            } else {
-                Some(&message.peer_id)
-            });
-            let author_id = match author_peer.and_then(user_id_from_peer) {
-                Some(author_id) => author_id,
-                None => {
-                    warn!(peer = ?message.peer_id, "message missing author user id");
-                    return None;
-                }
-            };
+            let author_id =
+                resolve_author_id(message.from_id.as_ref(), &message.peer_id, message.out);
             Some(ParsedMessage {
                 chat_id,
                 message_id: MessageId(message.id as i64),
                 author_id,
+                author_name: None,
                 date: message.date as i64,
                 edit_date: None,
                 text: service_action_text(&message.action),
@@ -379,6 +387,27 @@ fn user_id_from_peer(peer: &tl::enums::Peer) -> Option<UserId> {
     match peer {
         tl::enums::Peer::User(user) => Some(UserId(user.user_id)),
         tl::enums::Peer::Chat(_) | tl::enums::Peer::Channel(_) => None,
+    }
+}
+
+fn author_id_from_peer(peer: &tl::enums::Peer) -> AuthorId {
+    match peer {
+        tl::enums::Peer::User(user) => AuthorId::User(UserId(user.user_id)),
+        tl::enums::Peer::Chat(_) | tl::enums::Peer::Channel(_) => {
+            AuthorId::Chat(ChatId(PeerId::from(peer.clone()).bot_api_dialog_id()))
+        }
+    }
+}
+
+fn resolve_author_id(
+    from_id: Option<&tl::enums::Peer>,
+    peer_id: &tl::enums::Peer,
+    outgoing: bool,
+) -> AuthorId {
+    match from_id {
+        Some(peer) => author_id_from_peer(peer),
+        None if outgoing => AuthorId::User(UserId(PeerId::self_user().bot_api_dialog_id())),
+        None => author_id_from_peer(peer_id),
     }
 }
 

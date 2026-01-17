@@ -9,7 +9,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tracing::{info, warn};
 
-use crate::telegram::events::{ChatId, DomainEvent, MessageId, UserId};
+use crate::telegram::events::{AuthorId, ChatId, DomainEvent, MessageId, UserId};
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS chats (
@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS chats (
 CREATE TABLE IF NOT EXISTS messages (
     chat_id INTEGER NOT NULL,
     message_id INTEGER NOT NULL,
+    author_kind TEXT NOT NULL,
     author_id INTEGER NOT NULL,
+    author_name TEXT,
     timestamp INTEGER NOT NULL,
     edit_timestamp INTEGER,
     text TEXT NOT NULL,
@@ -82,6 +84,29 @@ impl ChatPeerKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthorKind {
+    User,
+    Chat,
+}
+
+impl AuthorKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            AuthorKind::User => "user",
+            AuthorKind::Chat => "chat",
+        }
+    }
+
+    fn from_str(raw: &str) -> Self {
+        match raw {
+            "chat" => AuthorKind::Chat,
+            "user" => AuthorKind::User,
+            _ => AuthorKind::User,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatSummary {
     pub chat_id: ChatId,
@@ -96,7 +121,8 @@ pub struct ChatSummary {
 pub struct CachedMessage {
     pub chat_id: ChatId,
     pub message_id: MessageId,
-    pub author_id: UserId,
+    pub author_id: AuthorId,
+    pub author_name: Option<String>,
     pub timestamp: i64,
     pub edit_timestamp: Option<i64>,
     pub text: String,
@@ -203,6 +229,7 @@ impl SqliteCacheStore {
         }
         let connection = sqlite::open(&self.path)?;
         connection.execute(SCHEMA)?;
+        ensure_message_columns(&connection)?;
         Ok(connection)
     }
 }
@@ -237,21 +264,29 @@ impl CacheStore for SqliteCacheStore {
         }
 
         let mut message_stmt = connection.prepare(
-            "SELECT chat_id, message_id, author_id, timestamp, edit_timestamp, text, outgoing FROM messages ORDER BY chat_id, timestamp",
+            "SELECT chat_id, message_id, author_kind, author_id, author_name, timestamp, edit_timestamp, text, outgoing FROM messages ORDER BY chat_id, timestamp",
         )?;
         while let State::Row = message_stmt.next()? {
             let chat_id = ChatId(message_stmt.read::<i64, _>(0)?);
             let message_id = MessageId(message_stmt.read::<i64, _>(1)?);
-            let author_id = UserId(message_stmt.read::<i64, _>(2)?);
-            let timestamp = message_stmt.read::<i64, _>(3)?;
-            let edit_timestamp = message_stmt.read::<Option<i64>, _>(4)?;
-            let text = message_stmt.read::<String, _>(5)?;
-            let outgoing = message_stmt.read::<i64, _>(6)? != 0;
+            let author_kind = AuthorKind::from_str(message_stmt.read::<String, _>(2)?.as_str());
+            let author_id_value = message_stmt.read::<i64, _>(3)?;
+            let author_name = message_stmt.read::<Option<String>, _>(4)?;
+            let timestamp = message_stmt.read::<i64, _>(5)?;
+            let edit_timestamp = message_stmt.read::<Option<i64>, _>(6)?;
+            let text = message_stmt.read::<String, _>(7)?;
+            let outgoing = message_stmt.read::<i64, _>(8)? != 0;
+            let author_id = match author_kind {
+                AuthorKind::User => AuthorId::User(UserId(author_id_value)),
+                AuthorKind::Chat => AuthorId::Chat(ChatId(author_id_value)),
+            };
+            let author_name = normalize_author_name(author_name.as_deref());
 
             messages.push(CachedMessage {
                 chat_id,
                 message_id,
                 author_id,
+                author_name,
                 timestamp,
                 edit_timestamp,
                 text,
@@ -312,13 +347,19 @@ impl CacheStore for SqliteCacheStore {
 
         {
             let mut message_stmt = connection.prepare(
-                "INSERT INTO messages (chat_id, message_id, author_id, timestamp, edit_timestamp, text, outgoing) VALUES (:chat_id, :message_id, :author_id, :timestamp, :edit_timestamp, :text, :outgoing)",
+                "INSERT INTO messages (chat_id, message_id, author_kind, author_id, author_name, timestamp, edit_timestamp, text, outgoing) VALUES (:chat_id, :message_id, :author_kind, :author_id, :author_name, :timestamp, :edit_timestamp, :text, :outgoing)",
             )?;
             for message in &snapshot.messages {
+                let (author_kind, author_id) = match message.author_id {
+                    AuthorId::User(user_id) => (AuthorKind::User, user_id.0),
+                    AuthorId::Chat(chat_id) => (AuthorKind::Chat, chat_id.0),
+                };
                 message_stmt.bind_iter::<_, (_, Value)>([
                     (":chat_id", (message.chat_id.0).into()),
                     (":message_id", (message.message_id.0).into()),
-                    (":author_id", (message.author_id.0).into()),
+                    (":author_kind", author_kind.as_str().into()),
+                    (":author_id", author_id.into()),
+                    (":author_name", message.author_name.clone().into()),
                     (":timestamp", message.timestamp.into()),
                     (":edit_timestamp", message.edit_timestamp.into()),
                     (":text", message.text.clone().into()),
@@ -349,6 +390,28 @@ impl CacheStore for SqliteCacheStore {
         connection.execute("COMMIT")?;
         Ok(())
     }
+}
+
+fn ensure_message_columns(connection: &Connection) -> Result<()> {
+    let mut stmt = connection.prepare("PRAGMA table_info(messages)")?;
+    let mut has_author_kind = false;
+    let mut has_author_name = false;
+    while let State::Row = stmt.next()? {
+        let name = stmt.read::<String, _>(1)?;
+        match name.as_str() {
+            "author_kind" => has_author_kind = true,
+            "author_name" => has_author_name = true,
+            _ => {}
+        }
+    }
+    if !has_author_kind {
+        connection
+            .execute("ALTER TABLE messages ADD COLUMN author_kind TEXT NOT NULL DEFAULT 'user'")?;
+    }
+    if !has_author_name {
+        connection.execute("ALTER TABLE messages ADD COLUMN author_name TEXT")?;
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -559,13 +622,16 @@ impl ChatCache {
     pub fn apply_event(&mut self, event: &DomainEvent) -> EvictionStats {
         match event {
             DomainEvent::MessageNew(message) => {
-                if let Some(name) = message.author_name.as_deref() {
-                    self.upsert_user_name(message.author_id, name);
+                if let AuthorId::User(user_id) = message.author_id {
+                    if let Some(name) = message.author_name.as_deref() {
+                        self.upsert_user_name(user_id, name);
+                    }
                 }
                 let cached = CachedMessage {
                     chat_id: message.chat_id,
                     message_id: message.message_id,
                     author_id: message.author_id,
+                    author_name: message.author_name.clone(),
                     timestamp: message.timestamp,
                     edit_timestamp: None,
                     text: message.text.clone(),
@@ -574,14 +640,17 @@ impl ChatCache {
                 self.insert_message(cached);
             }
             DomainEvent::MessageEdited(message) => {
-                if let Some(name) = message.editor_name.as_deref() {
-                    self.upsert_user_name(message.editor_id, name);
+                if let AuthorId::User(user_id) = message.editor_id {
+                    if let Some(name) = message.editor_name.as_deref() {
+                        self.upsert_user_name(user_id, name);
+                    }
                 }
                 self.update_message(
                     message.chat_id,
                     message.message_id,
                     &message.text,
                     message.timestamp,
+                    message.editor_name.as_deref(),
                 );
             }
             DomainEvent::ReadReceipt(receipt) => {
@@ -668,6 +737,8 @@ impl ChatCache {
     }
 
     fn insert_message(&mut self, message: CachedMessage) {
+        let mut message = message;
+        message.author_name = normalize_author_name(message.author_name.as_deref());
         let entry = self.chats.entry(message.chat_id).or_insert_with(|| {
             let summary = ChatSummary {
                 chat_id: message.chat_id,
@@ -718,6 +789,7 @@ impl ChatCache {
         message_id: MessageId,
         text: &str,
         timestamp: i64,
+        author_name: Option<&str>,
     ) {
         let Some(entry) = self.chats.get_mut(&chat_id) else {
             return;
@@ -730,6 +802,9 @@ impl ChatCache {
             let old_size = message_size_bytes(existing);
             existing.text = text.to_string();
             existing.edit_timestamp = Some(timestamp);
+            if let Some(normalized) = normalize_author_name(author_name) {
+                existing.author_name = Some(normalized);
+            }
             let new_size = message_size_bytes(existing);
             entry.message_bytes = entry.message_bytes.saturating_sub(old_size) + new_size;
             self.current_bytes = self.current_bytes.saturating_sub(old_size) + new_size;
@@ -883,17 +958,37 @@ async fn flush_snapshot(inner: &Arc<RwLock<ChatCache>>, store: &Arc<dyn CacheSto
 }
 
 fn message_size_bytes(message: &CachedMessage) -> usize {
-    message.text.len().saturating_add(MESSAGE_OVERHEAD_BYTES)
+    let author_name_len = message
+        .author_name
+        .as_ref()
+        .map(|name| name.len())
+        .unwrap_or(0);
+    message
+        .text
+        .len()
+        .saturating_add(author_name_len)
+        .saturating_add(MESSAGE_OVERHEAD_BYTES)
 }
 
 fn summary_size_bytes(summary: &ChatSummary) -> usize {
     summary.title.len().saturating_add(CHAT_OVERHEAD_BYTES)
 }
 
+fn normalize_author_name(author_name: Option<&str>) -> Option<String> {
+    author_name.and_then(|name| {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::telegram::events::{DomainEvent, MessageEdited, MessageNew, ReadReceipt};
+    use crate::telegram::events::{AuthorId, DomainEvent, MessageEdited, MessageNew, ReadReceipt};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
 
@@ -909,7 +1004,7 @@ mod tests {
         MessageNew {
             chat_id: ChatId(chat_id),
             message_id: MessageId(message_id),
-            author_id: UserId(1),
+            author_id: AuthorId::User(UserId(1)),
             author_name: None,
             timestamp,
             text: text.to_string(),
@@ -926,7 +1021,7 @@ mod tests {
         let edit = MessageEdited {
             chat_id: ChatId(1),
             message_id: MessageId(10),
-            editor_id: UserId(1),
+            editor_id: AuthorId::User(UserId(1)),
             editor_name: None,
             timestamp: 120,
             text: "updated".to_string(),
@@ -946,7 +1041,7 @@ mod tests {
         let message = MessageNew {
             chat_id: ChatId(1),
             message_id: MessageId(1),
-            author_id: UserId(42),
+            author_id: AuthorId::User(UserId(42)),
             author_name: Some("Ada Lovelace".to_string()),
             timestamp: 100,
             text: "hello".to_string(),
@@ -1015,7 +1110,8 @@ mod tests {
             messages: vec![CachedMessage {
                 chat_id: ChatId(1),
                 message_id: MessageId(2),
-                author_id: UserId(1),
+                author_id: AuthorId::Chat(ChatId(1)),
+                author_name: Some("Channel One".to_string()),
                 timestamp: 123,
                 edit_timestamp: None,
                 text: "hello".to_string(),

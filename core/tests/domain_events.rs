@@ -3,7 +3,8 @@ use grammers_client::Update;
 use grammers_session::updates::State;
 use grammers_tl_types as tl;
 use telegram_llm_core::telegram::{
-    ChatId, DomainEvent, EventMapper, EventReceiver, MessageId, ReadReceipt, Typing, UserId,
+    AuthorId, ChatId, DomainEvent, EventMapper, EventReceiver, MessageId, ReadReceipt, Typing,
+    UserId,
 };
 
 fn state_with_date(date: i32) -> State {
@@ -16,6 +17,10 @@ fn state_with_date(date: i32) -> State {
 
 fn peer_user(user_id: i64) -> tl::enums::Peer {
     tl::enums::Peer::User(tl::types::PeerUser { user_id })
+}
+
+fn peer_channel(channel_id: i64) -> tl::enums::Peer {
+    tl::enums::Peer::Channel(tl::types::PeerChannel { channel_id })
 }
 
 fn base_message(
@@ -120,7 +125,7 @@ fn maps_new_message_update() {
         DomainEvent::MessageNew(payload) => {
             assert_eq!(payload.chat_id, ChatId(1001));
             assert_eq!(payload.message_id, MessageId(42));
-            assert_eq!(payload.author_id, UserId(1001));
+            assert_eq!(payload.author_id, AuthorId::User(UserId(1001)));
             assert!(payload.author_name.is_none());
             assert_eq!(payload.timestamp, 111);
             assert_eq!(payload.text, "hello");
@@ -153,7 +158,7 @@ fn maps_service_message_update() {
         DomainEvent::MessageNew(payload) => {
             assert_eq!(payload.chat_id, ChatId(1001));
             assert_eq!(payload.message_id, MessageId(77));
-            assert_eq!(payload.author_id, UserId(1001));
+            assert_eq!(payload.author_id, AuthorId::User(UserId(1001)));
             assert_eq!(payload.timestamp, 123);
             assert_eq!(payload.text, "[Service] User joined");
             assert!(!payload.outgoing);
@@ -179,11 +184,38 @@ fn maps_edited_message_update() {
         DomainEvent::MessageEdited(payload) => {
             assert_eq!(payload.chat_id, ChatId(1002));
             assert_eq!(payload.message_id, MessageId(7));
-            assert_eq!(payload.editor_id, UserId(1002));
+            assert_eq!(payload.editor_id, AuthorId::User(UserId(1002)));
             assert!(payload.editor_name.is_none());
             assert_eq!(payload.timestamp, 250);
             assert_eq!(payload.text, "edited");
             assert!(!payload.outgoing);
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+}
+
+#[test]
+fn maps_channel_post_without_from_id() {
+    let mapper = EventMapper::new();
+    let mut message = base_message(1002, 1002, 9, 222, "channel post");
+    message.from_id = None;
+    message.peer_id = peer_channel(333);
+    let update = tl::types::UpdateNewChannelMessage {
+        message: tl::enums::Message::Message(message),
+        pts: 2,
+        pts_count: 1,
+    };
+    let update = wrap_raw_update(
+        tl::enums::Update::NewChannelMessage(update),
+        state_with_date(555),
+    );
+    let channel_chat_id = ChatId(grammers_session::defs::PeerId::channel(333).bot_api_dialog_id());
+
+    let event = mapper.map_update(&update).expect("expected domain event");
+    match event {
+        DomainEvent::MessageNew(payload) => {
+            assert_eq!(payload.author_id, AuthorId::Chat(channel_chat_id));
+            assert_eq!(payload.chat_id, channel_chat_id);
         }
         other => panic!("unexpected event: {other:?}"),
     }

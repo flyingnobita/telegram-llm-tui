@@ -17,12 +17,15 @@
   log window shows the primary log file (`[logging].log_file`). Logs are not
   shown in the main window, and it shows up to `[ui].log_window_max_lines`
   lines.
-- Render message authors using display names (name or @username) when available.
+- Render message authors using display names (name or @username) for users,
+  `post_author` for channel posts when available, and chat titles as a fallback.
 - Provide message pane horizontal scrolling with visible scrollbars.
 - Provide chat list pane vertical and horizontal scrollbars.
 - Composer input sends the current draft to the selected chat when Enter is
   pressed while the composer has focus. Ignore empty or whitespace-only drafts.
   Preserve the draft if the send cannot be enqueued.
+- Show a blinking underscore cursor in the composer when it has focus; blink at
+  a 500 ms cadence.
 - Use a reusable scrollable pane component for TUI panes (chat list, message
   list, message composer, log window) that:
   - supports vertical scrolling, optional horizontal scrolling, and optional

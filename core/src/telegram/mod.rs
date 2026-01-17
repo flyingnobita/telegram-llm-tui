@@ -19,8 +19,8 @@ pub use cache::{
 pub use dialogs::{fetch_dialog_summaries, fetch_dialogs, DialogSnapshot};
 pub use error::{Result, TelegramError};
 pub use events::{
-    spawn_domain_event_pump, ChatId, DomainEvent, EventMapper, EventReceiver, EventStream,
-    MessageEdited, MessageId, MessageNew, ReadReceipt, Typing, UserId,
+    spawn_domain_event_pump, AuthorId, ChatId, DomainEvent, EventMapper, EventReceiver,
+    EventStream, MessageEdited, MessageId, MessageNew, ReadReceipt, Typing, UserId,
 };
 pub use grammers_client::Client as TelegramClient;
 pub use grammers_session::defs::PeerRef;

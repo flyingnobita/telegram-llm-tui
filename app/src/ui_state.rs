@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use telegram_llm_core::telegram::{
-    CacheManager, CachedMessage, ChatId, ChatSummary, DialogSnapshot, PeerRef, UserId,
+    AuthorId, CacheManager, CachedMessage, ChatId, ChatSummary, DialogSnapshot, PeerRef, UserId,
 };
 use time::{format_description, OffsetDateTime};
 use ui::view::{ChatListItem, MessageItem, UiState};
@@ -58,12 +58,13 @@ impl UiCacheBridge {
         let (chat_items, selected_chat) = map_chat_summaries(&summaries, self.selected_chat);
         self.selected_chat = selected_chat;
         self.state.chats = chat_items;
+        let chat_titles = resolve_chat_titles(&summaries);
 
         self.state.messages = match selected_chat {
             Some(chat_id) => {
                 let messages = cache.messages_for_chat(chat_id, self.message_limit);
                 let author_names = resolve_author_names(cache, &messages);
-                map_messages(messages, &author_names)
+                map_messages(messages, &author_names, &chat_titles)
             }
             None => Vec::new(),
         };
@@ -130,26 +131,40 @@ fn chat_title(chat: &ChatSummary) -> String {
 fn map_messages(
     mut messages: Vec<CachedMessage>,
     author_names: &HashMap<UserId, String>,
+    chat_titles: &HashMap<ChatId, String>,
 ) -> Vec<MessageItem> {
     messages.sort_by_key(|message| message.timestamp);
     messages
         .into_iter()
         .map(|message| MessageItem {
             id: message.message_id.0,
-            author: message_author_label(&message, author_names),
+            author: message_author_label(&message, author_names, chat_titles),
             timestamp: format_timestamp(message.timestamp),
             body: message.text,
         })
         .collect()
 }
 
-fn message_author_label(message: &CachedMessage, author_names: &HashMap<UserId, String>) -> String {
+fn message_author_label(
+    message: &CachedMessage,
+    author_names: &HashMap<UserId, String>,
+    chat_titles: &HashMap<ChatId, String>,
+) -> String {
     if message.outgoing {
         "You".to_string()
-    } else if let Some(name) = author_names.get(&message.author_id) {
-        name.clone()
+    } else if let Some(name) = message.author_name.as_deref() {
+        name.to_string()
     } else {
-        format!("User {}", message.author_id.0)
+        match message.author_id {
+            AuthorId::User(user_id) => author_names
+                .get(&user_id)
+                .cloned()
+                .unwrap_or_else(|| format!("User {}", user_id.0)),
+            AuthorId::Chat(chat_id) => chat_titles
+                .get(&chat_id)
+                .cloned()
+                .unwrap_or_else(|| format!("Chat {}", chat_id.0)),
+        }
     }
 }
 
@@ -159,9 +174,18 @@ fn resolve_author_names(
 ) -> HashMap<UserId, String> {
     let mut author_ids = HashSet::new();
     for message in messages {
-        author_ids.insert(message.author_id);
+        if let AuthorId::User(user_id) = message.author_id {
+            author_ids.insert(user_id);
+        }
     }
     cache.user_display_names(author_ids)
+}
+
+fn resolve_chat_titles(summaries: &[ChatSummary]) -> HashMap<ChatId, String> {
+    summaries
+        .iter()
+        .map(|chat| (chat.chat_id, chat_title(chat)))
+        .collect()
 }
 
 fn format_timestamp(timestamp: i64) -> String {
@@ -185,8 +209,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use telegram_llm_core::telegram::{
-        CacheConfig, CacheError, CacheLimits, CacheSnapshot, CacheStore, CachedUser, ChatPeerKind,
-        ChatSummary, DomainEvent, MessageId, MessageNew, UserId,
+        AuthorId, CacheConfig, CacheError, CacheLimits, CacheSnapshot, CacheStore, CachedUser,
+        ChatPeerKind, ChatSummary, DomainEvent, MessageId, MessageNew, UserId,
     };
 
     #[derive(Default)]
@@ -232,7 +256,7 @@ mod tests {
         MessageNew {
             chat_id: ChatId(chat_id),
             message_id: MessageId(message_id),
-            author_id: UserId(42),
+            author_id: AuthorId::User(UserId(42)),
             author_name: None,
             timestamp,
             text: format!("message-{}", message_id),
@@ -310,6 +334,34 @@ mod tests {
 
         assert_eq!(bridge.state.messages.len(), 1);
         assert_eq!(bridge.state.messages[0].author, "Ada Lovelace");
+
+        manager.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn maps_chat_author_name_fallbacks() {
+        let store: Arc<dyn CacheStore> = Arc::new(InMemoryStore::default());
+        let manager = CacheManager::spawn(store, cache_config())
+            .await
+            .expect("spawn cache manager");
+
+        manager.upsert_chat(chat_summary(1, "Channel One", 100));
+        manager.apply_event(&DomainEvent::MessageNew(MessageNew {
+            chat_id: ChatId(1),
+            message_id: MessageId(1),
+            author_id: AuthorId::Chat(ChatId(1)),
+            author_name: None,
+            timestamp: 60,
+            text: "announcement".to_string(),
+            outgoing: false,
+        }));
+
+        let mut bridge = UiCacheBridge::new(None, 32);
+        bridge.set_selected_chat(Some(ChatId(1)));
+        bridge.refresh(&manager);
+
+        assert_eq!(bridge.state.messages.len(), 1);
+        assert_eq!(bridge.state.messages[0].author, "Channel One");
 
         manager.shutdown().await;
     }

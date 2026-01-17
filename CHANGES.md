@@ -1,5 +1,10 @@
 # Changes
 
+- Jan-17, 2026 - 02:35 PM +0800 - Added peer-aware author identities for
+  non-user senders, persisted author names, and updated cache/UI mapping with
+  new tests and docs.
+- Jan-17, 2026 - 02:05 PM +0800 - Added a blinking underscore cursor in the
+  composer pane with UTF-8 safe rendering and new UI tests.
 - Jan-17, 2026 - 01:48 PM +0800 - Hardened UI input cursor handling for Unicode
   and aligned log hotkey documentation with Ctrl+L, with tests updated.
 - Jan-16, 2026 - 11:23 PM +0800 - Wired composer Enter to enqueue sends via the

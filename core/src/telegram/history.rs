@@ -31,6 +31,7 @@ fn map_raw_messages(raw_messages: Vec<grammers_tl_types::enums::Message>) -> Vec
                 chat_id: parsed.chat_id,
                 message_id: parsed.message_id,
                 author_id: parsed.author_id,
+                author_name: parsed.author_name,
                 timestamp: parsed.date,
                 text: parsed.text,
                 outgoing: parsed.outgoing,
@@ -45,7 +46,7 @@ mod tests {
     use super::*;
     use grammers_tl_types as tl;
 
-    use crate::telegram::events::{ChatId, MessageId, UserId};
+    use crate::telegram::events::{AuthorId, ChatId, MessageId, UserId};
 
     fn peer_user(user_id: i64) -> tl::enums::Peer {
         tl::enums::Peer::User(tl::types::PeerUser { user_id })
@@ -115,7 +116,7 @@ mod tests {
         assert_eq!(mapped.len(), 2);
         assert_eq!(mapped[0].chat_id, ChatId(1));
         assert_eq!(mapped[0].message_id, MessageId(10));
-        assert_eq!(mapped[0].author_id, UserId(1));
+        assert_eq!(mapped[0].author_id, AuthorId::User(UserId(1)));
         assert_eq!(mapped[1].message_id, MessageId(11));
     }
 }
