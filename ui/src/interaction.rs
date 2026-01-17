@@ -46,7 +46,7 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         return UiActionResult::handled(handle_log_view_key(state, key, style));
     }
 
-    if key.code == KeyCode::Char('l') && key.modifiers == KeyModifiers::NONE {
+    if key.code == KeyCode::Char('l') && key.modifiers == KeyModifiers::CONTROL {
         state.log_view.is_open = true;
         return UiActionResult::handled(true);
     }
@@ -846,7 +846,7 @@ mod tests {
 
         let handled = handle_ui_key(
             &mut state,
-            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
             KeymapStyle::Vscode,
         );
 
