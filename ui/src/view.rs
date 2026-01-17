@@ -218,6 +218,7 @@ pub struct UiState {
     pub chat_list_pane: PaneState,
     pub composer_pane: PaneState,
     pub chat_list_width: u16,
+    pub composer_cursor_visible: bool,
 }
 
 impl Default for UiState {
@@ -235,6 +236,7 @@ impl Default for UiState {
             chat_list_pane: PaneState::default(),
             composer_pane: PaneState::default(),
             chat_list_width: DEFAULT_CHAT_LIST_WIDTH,
+            composer_cursor_visible: true,
         }
     }
 }
@@ -445,6 +447,7 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
     let chat_focused = !overlay_active && state.focus == UiFocus::Chats;
     let message_focused = !overlay_active && is_message_focus(state.focus);
     let composer_focused = !overlay_active && state.focus == UiFocus::Composer;
+    let composer_cursor_visible = composer_focused && state.composer_cursor_visible;
 
     frame.render_widget(Clear, layout.messages);
 
@@ -504,14 +507,14 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
         .title("Composer")
         .borders(Borders::ALL)
         .border_style(focus_border_style(composer_focused));
-    let composer_metrics = PaneMetrics::from_text(state.input.text.as_str());
+    let composer_content = composer_pane_content(state, composer_cursor_visible);
     render_pane(
         frame,
         layout.composer,
         composer_block,
-        state.input.text.as_str(),
+        composer_content.text.as_str(),
         &state.composer_pane,
-        composer_metrics,
+        composer_content.metrics,
         PaneConfig::composer_pane(),
     );
 
@@ -608,6 +611,21 @@ fn message_pane_content(state: &UiState) -> PaneContent {
         text: lines.join("\n"),
         metrics,
     }
+}
+
+fn composer_pane_content(state: &UiState, show_cursor: bool) -> PaneContent {
+    let mut input = state.input.clone();
+    input.clamp_cursor();
+    let mut text = input.text;
+    if show_cursor {
+        if input.cursor <= text.len() {
+            text.insert(input.cursor, '_');
+        } else {
+            text.push('_');
+        }
+    }
+    let metrics = PaneMetrics::from_text(text.as_str());
+    PaneContent { text, metrics }
 }
 
 fn message_max_line_width(state: &UiState) -> usize {

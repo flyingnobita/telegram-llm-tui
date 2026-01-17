@@ -35,6 +35,7 @@ use crate::ConsoleLogGate;
 const DRAW_INTERVAL_MS: u64 = 250;
 const INPUT_POLL_MS: u64 = 100;
 const LOG_REFRESH_INTERVAL_MS: u64 = 500;
+const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 
 pub async fn run_tui_loop(
     cache_manager: &CacheManager,
@@ -58,6 +59,8 @@ pub async fn run_tui_loop(
     let mut should_exit = false;
     let mut last_log_refresh =
         Instant::now().checked_sub(Duration::from_millis(LOG_REFRESH_INTERVAL_MS));
+    let mut cursor_blink_on = true;
+    let mut last_cursor_blink = Instant::now();
     apply_page_size(&mut ui_bridge.state, tui.terminal_area()?);
     tui.draw(&ui_bridge.state)?;
 
@@ -107,6 +110,11 @@ pub async fn run_tui_loop(
             log_window_max_lines,
             &mut last_log_refresh,
         );
+        if last_cursor_blink.elapsed() >= Duration::from_millis(CURSOR_BLINK_INTERVAL_MS) {
+            cursor_blink_on = !cursor_blink_on;
+            last_cursor_blink = Instant::now();
+        }
+        ui_bridge.state.composer_cursor_visible = cursor_blink_on;
         tui.draw(&ui_bridge.state)?;
         if should_exit {
             break;

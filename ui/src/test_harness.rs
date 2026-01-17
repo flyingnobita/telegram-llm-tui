@@ -42,8 +42,13 @@ pub fn render_to_string(state: &UiState, size: (u16, u16)) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view::{ChatListItem, CommandPaletteState, DraftModalState, MessageItem};
+    use crate::input::InputState;
+    use crate::view::{
+        composer_text_area, ChatListItem, CommandPaletteState, DraftModalState, MessageItem,
+        UiFocus,
+    };
     use insta::assert_snapshot;
+    use ratatui::layout::Rect;
 
     fn sample_state() -> UiState {
         let mut state = UiState::default();
@@ -196,5 +201,43 @@ mod tests {
             !rendered.contains("OLD-LINE-SHOULD-CLEAR"),
             "expected cleared message area, got:\n{rendered}"
         );
+    }
+
+    #[test]
+    fn renders_composer_cursor_when_focused_and_blink_on() {
+        let state = UiState {
+            focus: UiFocus::Composer,
+            input: InputState {
+                text: "hi".to_string(),
+                cursor: 1,
+            },
+            composer_cursor_visible: true,
+            ..UiState::default()
+        };
+
+        let size = (80, 20);
+        let buffer = render_to_buffer(&state, size);
+        let text_area = composer_text_area(Rect::new(0, 0, size.0, size.1), state.chat_list_width);
+        let cell = buffer.get(text_area.x + 1, text_area.y);
+        assert_eq!(cell.symbol(), "_");
+    }
+
+    #[test]
+    fn hides_composer_cursor_when_blink_off() {
+        let state = UiState {
+            focus: UiFocus::Composer,
+            input: InputState {
+                text: "hi".to_string(),
+                cursor: 1,
+            },
+            composer_cursor_visible: false,
+            ..UiState::default()
+        };
+
+        let size = (80, 20);
+        let buffer = render_to_buffer(&state, size);
+        let text_area = composer_text_area(Rect::new(0, 0, size.0, size.1), state.chat_list_width);
+        let cell = buffer.get(text_area.x + 1, text_area.y);
+        assert_eq!(cell.symbol(), "i");
     }
 }
