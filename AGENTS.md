@@ -3,17 +3,32 @@
 This repository is in the planning phase. Use this guide to keep decisions,
 tooling, and documentation consistent until the codebase is scaffolded.
 
+## Agent Mandates
+
+- **Context First:** Before starting any task, read `PLANS.md` to understand
+  the current phase and `SPECS.md` for requirements.
+- **ADR Adherence:** When making architectural choices, check `docs/adr/`
+  first. If a decision contradicts an ADR, stop and ask the user.
+- **Plan Updates:** If a task changes the state of a plan (e.g., completing a
+  step), you must update `docs/plan-progress/` or `PLANS.md` as part of the
+  PR/commit.
+
 ## Project Structure & Module Organization
 
 - Planning and requirements live at the root: `PLANS.md` (execution plan) and
   `SPECS.md` (requirements + ADR policy).
-- Architecture decisions are recorded as ADRs in `docs/adr/` with the naming
-  pattern `YYYYMMDD-short-title.md`.
-- Planned Rust workspace layout (per `PLANS.md`): `app/` (binary), `core/`
-  (Telegram + domain), `ui/` (TUI), `llm/` (providers/prompts), and
-  `integration-tests/`.
+- Changelog: `CHANGES.md`
+- Architecture decisions are recorded as ADRs in `docs/adr/`.
+- Planned Rust workspace layout (per `PLANS.md`):
+  - `app/` (binary)
+  - `core/` (Telegram + domain)
+  - `ui/` (TUI)
+  - `llm/` (providers/prompts)
+  - `integration-tests/`
 
-## Current Decisions (MVP)
+## Architecture & Key Decisions
+
+### Current Decisions (MVP)
 
 - Telegram client: `grammers` (MTProto).
 - TUI framework: `ratatui`.
@@ -21,52 +36,51 @@ tooling, and documentation consistent until the codebase is scaffolded.
   production.
 - LLM auth: local `.env` for dev-only; production secret store planned.
 
-## Build, Test, and Development Commands
+### Decision Records (ADRs)
 
-Tool versions are managed via mise-en-place.
+- Create an ADR as soon as a decision is made.
+- Reference the relevant ADR in PR descriptions and planning updates.
 
-- `mise install` — install pinned tool versions (Rust toolchain, helpers).
-- `cargo build` — build workspace (once scaffolded).
-- `cargo test` — run unit tests (once scaffolded).
-- `INSTA_UPDATE=always mise exec -- cargo test -p ui` — update UI snapshots
-  during tests.
-- `cargo fmt -- --check` and
-  `cargo clippy --workspace --all-targets --all-features -- -D warnings` —
-  formatting and linting (planned in CI).
-- `cargo nextest run` — integration test runner (planned).
+### Configs
+
+- Any hardcoded values should be placed in the config file, with a short
+  description of the value and the values that it can take.
+- Config file location: `app/config/app.toml` (Overrides Global Default)
+
+### Logging
+
+- Error log file: `logs/app-error.log` (configured in
+  config file under `[logging].error_log_file`).
+- Log level: configured in config file under `[logging].level`
 
 ## Coding Style & Naming Conventions
 
 - Rust formatting: `rustfmt` defaults (4-space indentation, no tabs).
 - Naming: crates/modules `snake_case`, types `UpperCamelCase`, functions/vars
   `snake_case`.
-- ADR files: `docs/adr/YYYYMMDD-short-title.md`.
 
-## Testing Guidelines
+## Development Workflow
+
+### Build, Test, and Development Commands
+
+Tool versions are managed via mise-en-place.
+
+- Install pinned tool versions (Rust toolchain, helpers): `mise install`
+- Build workspace: `cargo build`
+- Run unit tests: `cargo test`
+- Update UI snapshots: `INSTA_UPDATE=always mise exec -- cargo test -p ui`
+  during tests.
+- Formatting and linting: `cargo fmt -- --check` and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- Integration test runner (planned) - `cargo nextest run`
+
+### Testing Guidelines
 
 - Planned split: unit tests inside crates, integration tests in `integration-tests/`.
-- UI snapshot tests will likely use `insta` (see `PLANS.md`).
+- UI snapshot tests use `insta`.
 - Keep test data deterministic and avoid live Telegram/LLM calls in CI.
 
-## Commit & Pull Request Guidelines
+## Pull Request Guidelines
 
-- No Git history exists yet, so no established commit message convention. Agree
-  on a standard before first commits (e.g., Conventional Commits).
-- PRs should include: a short summary, linked issues (if any), and updates to
+- In addition to standard commit requirements, PRs must include updates to
   `PLANS.md`, `SPECS.md`, or `docs/adr/*` when decisions change.
-
-## Decision Records (ADRs)
-
-- Create an ADR as soon as a decision is made.
-- Reference the relevant ADR in PR descriptions and planning updates.
-
-## Configs
-
-- any hardcoded values should be placed in the config file, with a short description of the value and the values that it can take
-- config file location: `app/config/app.toml`
-
-## Logging
-
-- Error log file: `logs/app-error.log` (configured in
-  config file under `[logging].error_log_file`).
-- Log level: configured in config file under `[logging].level`
