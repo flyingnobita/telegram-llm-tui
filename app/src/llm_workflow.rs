@@ -59,14 +59,14 @@ mod tests {
         ];
 
         let transcript = format_transcript(&messages);
-        
+
         // Note: The timestamp formatting depends on the system's local offset if OffsetDateTime uses it,
         // but from_unix_timestamp returns UTC. Wait, OffsetDateTime::from_unix_timestamp returns a result
         // in UTC. So let's check the output.
         // Actually, the format_transcript uses `dt.year()` etc which works on OffsetDateTime.
-        // Let's see if it produces UTC or if I need to be careful about timezones. 
+        // Let's see if it produces UTC or if I need to be careful about timezones.
         // `from_unix_timestamp` constructs a UTC datetime.
-        
+
         assert!(transcript.contains("Alice: Hello there"));
         assert!(transcript.contains("Unknown: General Kenobi"));
         assert!(transcript.contains("2023-01-01 00:00"));

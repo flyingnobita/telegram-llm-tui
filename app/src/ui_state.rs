@@ -7,8 +7,6 @@ use telegram_llm_core::telegram::{
 use time::{format_description, OffsetDateTime};
 use ui::view::{ChatListItem, MessageItem, UiState};
 
-use ui::input::InputState;
-
 #[derive(Debug, Clone)]
 pub struct UiCacheBridge {
     pub state: UiState,
@@ -58,8 +56,7 @@ impl UiCacheBridge {
     pub fn refresh(&mut self, cache: &CacheManager) -> Option<ChatId> {
         let summaries = cache.chat_summaries();
         let query = self.state.chat_search.query.text.trim();
-        let (chat_items, selected_chat) =
-            map_chat_summaries(&summaries, self.selected_chat, query);
+        let (chat_items, selected_chat) = map_chat_summaries(&summaries, self.selected_chat, query);
         self.selected_chat = selected_chat;
         self.state.chats = chat_items;
         let chat_titles = resolve_chat_titles(&summaries);
@@ -110,9 +107,7 @@ fn map_chat_summaries(
 
     if !filter_query.is_empty() {
         let needle = filter_query.to_lowercase();
-        sorted.retain(|chat| {
-            chat_title(chat).to_lowercase().contains(&needle)
-        });
+        sorted.retain(|chat| chat_title(chat).to_lowercase().contains(&needle));
     }
 
     let resolved_selection = selected_chat

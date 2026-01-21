@@ -4,16 +4,10 @@ use async_trait::async_trait;
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
-pub struct ChatMessage {
-    pub author: String,
-    pub content: String,
-}
-
-#[derive(Debug, Clone)]
 pub struct LlmRequest {
     pub system_prompt: String,
     pub user_instruction: String,
-    pub transcript: Vec<ChatMessage>,
+    pub transcript: String,
 }
 
 #[derive(Debug, Clone)]
@@ -42,7 +36,7 @@ impl LlmProvider for MockProvider {
         let transcript_len = request.transcript.len();
         Ok(LlmResponse {
             text: format!(
-                "Draft generated based on {} messages. Instruction: {}",
+                "Draft generated based on transcript ({} chars). Instruction: {}",
                 transcript_len, request.user_instruction
             ),
         })

@@ -9,19 +9,19 @@ including sub-feature ordering where applicable.
 **Prerequisites:** None.
 
 1. [x] (0.1) Telegram client: use `grammers` (MTProto) for the MVP.
-   See `docs/adr/20251231-telegram-client-grammers.md`.
+       See `docs/adr/20251231-telegram-client-grammers.md`.
 2. [x] (0.2) TUI framework: use `ratatui`.
-   See `docs/adr/20251231-tui-ratatui.md`.
+       See `docs/adr/20251231-tui-ratatui.md`.
 3. [x] (0.3) LLM backend: start with OpenAI; store API keys in local `.env`
-   for dev-only; implement a proper prod secret store later.
-   See `docs/adr/20251231-llm-backend-openai-env.md`.
+       for dev-only; implement a proper prod secret store later.
+       See `docs/adr/20251231-llm-backend-openai-env.md`.
 4. [x] (0.4) Data directory: store under the project local folder for
-   dev-only; switch to OS-specific dirs later.
-   See `docs/adr/20251231-data-dir-local.md`.
+       dev-only; switch to OS-specific dirs later.
+       See `docs/adr/20251231-data-dir-local.md`.
 5. [x] (0.5) LLM-friendly Test Framework: decide on a testing framework
-   for this project (favoring deterministic, LLM-friendly tests).
+       for this project (favoring deterministic, LLM-friendly tests).
 6. [x] (0.6) Logging policy: plain logs, size-based rotation, and content
-   logging defaults. See `docs/adr/20260106-logging-policy.md`.
+       logging defaults. See `docs/adr/20260106-logging-policy.md`.
 
 ## 1 Project scaffold
 
@@ -30,16 +30,16 @@ including sub-feature ordering where applicable.
 test harness.
 
 1. [x] (1.1) Create Cargo workspace with crates: `app` (bin, wiring), `core`
-   (Telegram + domain), `ui` (TUI components), `llm` (providers, prompt
-   templates), `integration-tests`.
+       (Telegram + domain), `ui` (TUI components), `llm` (providers, prompt
+       templates), `integration-tests`.
 2. [x] (1.2) Use mise-en-place to manage tool versions (Rust toolchain, build
-   deps, CLI helpers).
+       deps, CLI helpers).
 3. [x] (1.3) Add CI basics: `cargo fmt -- --check`, `clippy -D warnings`,
-   `nextest`. Set Rust toolchain in `rust-toolchain.toml`.
+       `nextest`. Set Rust toolchain in `rust-toolchain.toml`.
 4. [x] (1.4) Keep Telegram integration grammers-only (MTProto) and document
-   any native deps if they appear.
+       any native deps if they appear.
 5. [x] (1.5) Set up a TUI test harness (headless render/snapshot) and seed
-   unit tests for UI input/behavior.
+       unit tests for UI input/behavior.
 
 ## 2 Telegram core
 
@@ -48,15 +48,15 @@ test harness.
 persistence.
 
 1. [x] (2.1) Implement client bootstrap (grammers session config, auth flow,
-   phone/QR login) and update pump (background async task).
+       phone/QR login) and update pump (background async task).
 2. [x] (2.2) Model domain events (new message, edited, read receipt, typing)
-   and expose as channels or streams to the UI layer.
+       and expose as channels or streams to the UI layer.
 3. [x] (2.3) Implement send pipeline with rate-limit or backoff handling;
-   support text, reply, edit, delete; queue unsent messages when offline.
+       support text, reply, edit, delete; queue unsent messages when offline.
 4. [x] (2.4) Add minimal persistence for chat metadata and message cache to
-   reduce network round-trips; keep caches small and pluggable.
+       reduce network round-trips; keep caches small and pluggable.
 5. [x] (2.5) Bootstrap recent message history on startup for all chats (default
-   100 per chat, cached).
+       100 per chat, cached).
 
 ## 3 TUI experience
 
@@ -65,29 +65,29 @@ data). **Sub-feature ordering:** Layout -> input ergonomics -> accessibility ->
 notifications.
 
 1. [x] (3.1) Layout v1: left chat list, main message view, bottom composer;
-   modal for LLM-generated drafts; command palette for actions; runtime TUI
-   loop in the app to render the layout.
+       modal for LLM-generated drafts; command palette for actions; runtime TUI
+       loop in the app to render the layout.
 2. [x] (3.2) Input ergonomics: vim or VSCode-style keymaps, scrollback,
-   search in chat, message selection for LLM export, log window hotkey
-   and scroll; runtime input loop wiring for keymaps and redraw.
+       search in chat, message selection for LLM export, log window hotkey
+       and scroll; runtime input loop wiring for keymaps and redraw.
 3. [x] (3.2.1) Reusable pane refactor: extract a reusable scrollable pane
-   component and rewire the message list, message composer, and log window to
-   use it.
+       component and rewire the message list, message composer, and log window to
+       use it.
 4. [x] (3.2.2) Composer submit: wire Enter to send the composer draft to the
-   selected chat via the send pipeline.
+       selected chat via the send pipeline.
 5. [ ] (3.3) Accessibility: color themes (light/dark/high-contrast),
-   configurable keybindings, resize handling, mouse optional.
+       configurable keybindings, resize handling, mouse optional.
 6. [ ] (3.4) Notifications: status bar for connection state; optional desktop
-   notifications via feature flag.
+       notifications via feature flag.
 7. [x] (3.5) Improve TUI UI/UX: adopt lazygit-like panel-based layout,
-   consistent keybindings/focus model, bottom key hints, and single-keystroke
-   common flows.
+       consistent keybindings/focus model, bottom key hints, and single-keystroke
+       common flows.
 8. [x] (3.6) Implement Chat List Search (`/` key): filter chats by title.
 9. [x] (3.7) Enable `j`/`k` navigation in all keymap styles (currently Vim-only).
 10. [x] (3.8) Enable `/` (Search) in Messages in all keymap styles (currently
-    Vim-only).
+        Vim-only).
 11. [x] (3.9) Enable `i` (Focus Composer) in all keymap styles (currently
-    Vim-only).
+        Vim-only).
 
 ## 4 LLM workflow
 
@@ -96,14 +96,14 @@ selection or draft UI. **Sub-feature ordering:** Export pipeline -> draft
 pipeline -> prompt kit -> safety.
 
 1. [x] (4.1) Export pipeline: select messages -> structured transcript (with
-   authors or timestamps) -> send to provider with chosen prompt.
+       authors or timestamps) -> send to provider with chosen prompt.
 2. [x] (4.2) Draft pipeline: receive LLM draft -> show diff vs last user
-   draft -> allow edit -> user explicitly sends.
+       draft -> allow edit -> user explicitly sends.
 3. [ ] (4.3) Prompt kit: summarize thread, propose reply, extract action
-   items, sentiment or priority tagging; keep prompts versioned.
+       items, sentiment or priority tagging; keep prompts versioned.
 4. [ ] (4.4) Safety: truncate or zip transcripts to fit token limits; redact
-   secrets before sending; avoid logging auth tokens; log prompts or responses
-   for reproducibility (default on).
+       secrets before sending; avoid logging auth tokens; log prompts or responses
+       for reproducibility (default on).
 
 ## 5 Tooling, testing, and DX
 
@@ -112,14 +112,14 @@ meaningful coverage. **Sub-feature ordering:** Domain tests -> UI snapshot tests
 -> tracing or logging -> dev-env command.
 
 1. [ ] (5.1) Unit tests for domain logic (rate limits, message queue);
-   integration tests with mocked grammers or recorded sessions.
+       integration tests with mocked grammers or recorded sessions.
 2. [ ] (5.2) Snapshot tests for UI rendering (ratatui) using `insta` with
-   deterministic data.
+       deterministic data.
 3. [ ] (5.3) Tracing or logging with `tracing` + `tracing-subscriber`;
-   human-readable logs to `logs/app.log`; size-based rotation at 1 MB with
-   20 files; toggle verbosity at runtime.
+       human-readable logs to `logs/app.log`; size-based rotation at 1 MB with
+       20 files; toggle verbosity at runtime.
 4. [ ] (5.4) Developer commands: `cargo xtask dev-env` to run a local config
-   wizard and start the app.
+       wizard and start the app.
 
 ## 6 Packaging and release
 
@@ -128,12 +128,12 @@ in place. **Sub-feature ordering:** Binaries or codesign -> onboarding, docs,
 secrets helper -> package managers.
 
 1. [ ] (6.1) Ship static binaries per target; verify codesign or notarization
-   for macOS.
+       for macOS.
 2. [ ] (6.2) Provide `.env.example`, a production secret-store helper script
-   (e.g., keychain), and minimal onboarding doc (phone login steps, API ID/Hash
-   link).
+       (e.g., keychain), and minimal onboarding doc (phone login steps, API ID/Hash
+       link).
 3. [ ] (6.3) Optional: publish Homebrew tap and AUR package once MVP
-   stabilizes.
+       stabilizes.
 
 ## 7 Side quests (MCP and tooling)
 
@@ -141,10 +141,10 @@ secrets helper -> package managers.
 setup -> bench or analysis servers.
 
 1. [ ] (7.1) Install helpful MCP servers for the lifecycle: repo or code map
-   for navigation, shell or fs runners for scripted experiments, HTTP client
-   for quick API pokes, and benchmark or trace helpers for profiling prompts.
+       for navigation, shell or fs runners for scripted experiments, HTTP client
+       for quick API pokes, and benchmark or trace helpers for profiling prompts.
 2. [ ] (7.2) Consider MCP bench or analysis servers to simulate tool-rich
-   flows during LLM prompt testing once the core is stable.
+       flows during LLM prompt testing once the core is stable.
 
 ## 8 MVP acceptance criteria (from SPEC)
 
@@ -154,7 +154,7 @@ draft loop -> disconnect recovery.
 
 1. [ ] (8.1) User can log in, select a chat, read history, and send a message.
 2. [ ] (8.2) User can select messages, generate an LLM draft, edit it, and
-   send.
+       send.
 3. [ ] (8.3) App recovers from temporary disconnect without losing drafts.
 
 ## 9 Milestones
@@ -165,10 +165,10 @@ above.
 
 1. [ ] (9.1) M0 (week 1): spikes conclude; stacks chosen; scaffold + CI green.
 2. [ ] (9.2) M1 (week 2-3): login, chat list, read/send text, basic TUI
-   layout.
+       layout.
 3. [ ] (9.3) M2 (week 4-5): LLM export -> draft -> user send loop; transcript
-   saving; keymaps.
+       saving; keymaps.
 4. [ ] (9.4) M3 (week 6): resilience (offline queue), theming,
-   notifications; first binary release (macOS first).
+       notifications; first binary release (macOS first).
 5. [ ] (9.5) M4 (week 7+): polish, packaging, docs, optional plugins
-   (filters, rules, extra providers).
+       (filters, rules, extra providers).

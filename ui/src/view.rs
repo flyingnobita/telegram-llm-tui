@@ -1,12 +1,12 @@
 use std::collections::BTreeSet;
 
+use ratatui::text::{Line, Span};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
-use ratatui::text::{Line, Span};
 
 use crate::input::InputState;
 use crate::pane::{
@@ -228,6 +228,7 @@ pub struct UiState {
     pub composer_pane: PaneState,
     pub chat_list_width: u16,
     pub composer_cursor_visible: bool,
+    pub status_message: Option<String>,
 }
 
 impl Default for UiState {
@@ -247,6 +248,7 @@ impl Default for UiState {
             composer_pane: PaneState::default(),
             chat_list_width: DEFAULT_CHAT_LIST_WIDTH,
             composer_cursor_visible: true,
+            status_message: None,
         }
     }
 }
@@ -407,7 +409,7 @@ fn message_total_lines(messages: &[MessageItem]) -> usize {
     messages.iter().map(message_line_count).sum()
 }
 
-fn message_line_count(message: &MessageItem) -> usize {
+pub(crate) fn message_line_count(message: &MessageItem) -> usize {
     let lines = message.body.lines().count();
     lines.max(1)
 }
@@ -783,6 +785,17 @@ fn draw_command_palette(frame: &mut Frame, state: &UiState, area: Rect) {
 }
 
 fn draw_key_hints(frame: &mut Frame, state: &UiState, area: Rect) {
+    if let Some(msg) = &state.status_message {
+        let span = Span::styled(
+            msg,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+        frame.render_widget(Paragraph::new(Line::from(span)), area);
+        return;
+    }
+
     let hints = key_hints_for_focus(state.focus);
     let mut spans = Vec::new();
     for (i, (key, desc)) in hints.iter().enumerate() {
@@ -791,7 +804,10 @@ fn draw_key_hints(frame: &mut Frame, state: &UiState, area: Rect) {
         }
         spans.push(Span::styled(
             format!(" {} ", key),
-            Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray).fg(Color::White),
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .bg(Color::DarkGray)
+                .fg(Color::White),
         ));
         spans.push(Span::raw(format!(" {} ", desc)));
     }
@@ -801,10 +817,13 @@ fn draw_key_hints(frame: &mut Frame, state: &UiState, area: Rect) {
     }
     spans.push(Span::styled(
         " Tab ",
-        Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray).fg(Color::White),
+        Style::default()
+            .add_modifier(Modifier::BOLD)
+            .bg(Color::DarkGray)
+            .fg(Color::White),
     ));
     spans.push(Span::raw(" Next Pane "));
-    
+
     let line = Line::from(spans);
     let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Reset));
     frame.render_widget(paragraph, area);
@@ -812,31 +831,17 @@ fn draw_key_hints(frame: &mut Frame, state: &UiState, area: Rect) {
 
 fn key_hints_for_focus(focus: UiFocus) -> Vec<(&'static str, &'static str)> {
     match focus {
-        UiFocus::Chats => vec![
-            ("j/k", "Nav"),
-            ("Enter", "Select"),
-            ("/", "Search"),
-        ],
-        UiFocus::ChatSearch => vec![
-            ("Esc", "Cancel"),
-            ("Enter", "Done"),
-            ("Up/Down", "Nav"),
-        ],
+        UiFocus::Chats => vec![("j/k", "Nav"), ("Enter", "Select"), ("/", "Search")],
+        UiFocus::ChatSearch => vec![("Esc", "Cancel"), ("Enter", "Done"), ("Up/Down", "Nav")],
         UiFocus::Messages => vec![
             ("j/k", "Scroll"),
             ("Space", "Select"),
             ("/", "Search"),
             ("i", "Composer"),
+            ("Ctrl+e", "Export"),
         ],
-        UiFocus::Composer => vec![
-            ("Esc", "Unfocus"),
-            ("Enter", "Send"),
-        ],
-        UiFocus::Search => vec![
-            ("Esc", "Cancel"),
-            ("Enter", "Jump"),
-            ("Up/Down", "Nav"),
-        ],
+        UiFocus::Composer => vec![("Esc", "Unfocus"), ("Enter", "Send")],
+        UiFocus::Search => vec![("Esc", "Cancel"), ("Enter", "Jump"), ("Up/Down", "Nav")],
     }
 }
 

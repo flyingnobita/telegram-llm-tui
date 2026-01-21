@@ -18,7 +18,9 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use telegram_llm_core::telegram::{CacheManager, EventReceiver, MessageId, SendPipeline, SendRequest};
+use telegram_llm_core::telegram::{
+    CacheManager, EventReceiver, MessageId, SendPipeline, SendRequest,
+};
 use ui::input::InputState;
 use ui::interaction::{handle_ui_key, KeymapStyle, UiAction};
 use ui::view::{
@@ -38,6 +40,7 @@ const INPUT_POLL_MS: u64 = 100;
 const LOG_REFRESH_INTERVAL_MS: u64 = 500;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run_tui_loop(
     cache_manager: &CacheManager,
     ui_bridge: &mut UiCacheBridge,
@@ -210,6 +213,42 @@ fn handle_ui_action(
         UiAction::ExportSelected => {
             handle_export_selected(ui_bridge, cache_manager, ui_command_tx);
         }
+        UiAction::OpenCommandPalette => {
+            handle_open_command_palette(ui_bridge);
+        }
+        UiAction::CommandPaletteSubmit => {
+            handle_command_palette_submit(ui_bridge, cache_manager, ui_command_tx);
+        }
+        UiAction::SelectAllInView => {
+            ui::interaction::select_all_in_view(&mut ui_bridge.state);
+        }
+    }
+}
+
+fn handle_open_command_palette(ui_bridge: &mut UiCacheBridge) {
+    ui_bridge.state.command_palette.is_open = true;
+    ui_bridge.state.command_palette.items = vec!["Export Selected to LLM".to_string()];
+    ui_bridge.state.command_palette.selected = 0;
+}
+
+fn handle_command_palette_submit(
+    ui_bridge: &mut UiCacheBridge,
+    cache_manager: &CacheManager,
+    ui_command_tx: mpsc::UnboundedSender<UiCommand>,
+) {
+    let selected = ui_bridge.state.command_palette.selected;
+    let item = ui_bridge.state.command_palette.items.get(selected).cloned();
+    ui_bridge.state.command_palette.is_open = false;
+
+    if let Some(command) = item {
+        match command.as_str() {
+            "Export Selected to LLM" => {
+                handle_export_selected(ui_bridge, cache_manager, ui_command_tx);
+            }
+            _ => {
+                warn!(command, "unknown command from palette");
+            }
+        }
     }
 }
 
@@ -219,6 +258,10 @@ fn handle_ui_command(command: UiCommand, ui_bridge: &mut UiCacheBridge) {
             ui_bridge.state.input.text = text;
             ui_bridge.state.input.cursor = ui_bridge.state.input.text.len();
             ui_bridge.state.focus = UiFocus::Composer;
+            ui_bridge.state.status_message = None;
+        }
+        UiCommand::ShowNotification(text) => {
+            ui_bridge.state.status_message = Some(text);
         }
     }
 }
@@ -243,17 +286,32 @@ fn handle_export_selected(
 
     let messages = cache_manager.get_messages_by_ids(selected_ids);
     let transcript = format_transcript(&messages);
-    info!("exporting transcript to LLM (stub)");
+    info!("exporting transcript to LLM");
+
+    let _ = ui_command_tx.send(UiCommand::ShowNotification(
+        "Processing export...".to_string(),
+    ));
 
     tokio::spawn(async move {
-        // Stub: Simulate LLM processing delay
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        let draft = format!(
-            "Here is a draft based on the transcript:\n\n> {}\n\nResponse: [Your text here]",
-            transcript.lines().take(1).next().unwrap_or("...")
-        );
-        if let Err(err) = ui_command_tx.send(UiCommand::UpdateComposer(draft)) {
-            warn!(error = %err, "failed to send update composer command");
+        use llm::{LlmProvider, LlmRequest, MockProvider};
+
+        let provider = MockProvider;
+        let request = LlmRequest {
+            system_prompt: "You are a helpful assistant.".to_string(),
+            user_instruction: "Draft a reply to this conversation.".to_string(),
+            transcript,
+        };
+
+        match provider.generate_draft(request).await {
+            Ok(response) => {
+                if let Err(err) = ui_command_tx.send(UiCommand::UpdateComposer(response.text)) {
+                    warn!(error = %err, "failed to send update composer command");
+                }
+            }
+            Err(err) => {
+                let _ = ui_command_tx.send(UiCommand::ShowNotification(format!("Error: {}", err)));
+                warn!(error = %err, "llm provider failed");
+            }
         }
     });
 }

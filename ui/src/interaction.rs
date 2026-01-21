@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::input::{handle_key as handle_text_key, InputState};
 use crate::view::{
     chat_list_max_horizontal_scroll, ensure_chat_list_selection_visible,
-    log_view_max_horizontal_scroll, log_view_max_scroll, message_line_offset,
+    log_view_max_horizontal_scroll, log_view_max_scroll, message_line_count, message_line_offset,
     message_max_horizontal_scroll, message_max_scroll, ChatListItem, UiFocus, UiState,
 };
 
@@ -19,6 +19,9 @@ pub enum UiAction {
     ComposerSubmit,
     TriggerRefresh,
     ExportSelected,
+    OpenCommandPalette,
+    CommandPaletteSubmit,
+    SelectAllInView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,9 +51,24 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         return UiActionResult::handled(handle_log_view_key(state, key, style));
     }
 
+    if state.command_palette.is_open {
+        return handle_command_palette_key(state, key);
+    }
+
     if key.code == KeyCode::Char('l') && key.modifiers == KeyModifiers::CONTROL {
         state.log_view.is_open = true;
         return UiActionResult::handled(true);
+    }
+
+    if key.code == KeyCode::Char('p') && key.modifiers == KeyModifiers::CONTROL {
+        return UiActionResult::action(UiAction::OpenCommandPalette);
+    }
+
+    if key.code == KeyCode::Char('a')
+        && key.modifiers == KeyModifiers::CONTROL
+        && state.focus == UiFocus::Messages
+    {
+        return UiActionResult::action(UiAction::SelectAllInView);
     }
 
     if state.message_view.search.is_open && state.focus != UiFocus::Search {
@@ -62,7 +80,9 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         return UiActionResult::handled(true);
     }
 
-    if key.code == KeyCode::BackTab || (key.code == KeyCode::Tab && key.modifiers == KeyModifiers::SHIFT) {
+    if key.code == KeyCode::BackTab
+        || (key.code == KeyCode::Tab && key.modifiers == KeyModifiers::SHIFT)
+    {
         cycle_focus_back(state);
         return UiActionResult::handled(true);
     }
@@ -93,6 +113,61 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         UiFocus::Composer => handle_composer_key(state, key, style),
         UiFocus::Search => UiActionResult::handled(handle_search_key(state, key)),
         UiFocus::ChatSearch => handle_chat_search_key(state, key),
+    }
+}
+
+fn handle_command_palette_key(state: &mut UiState, key: KeyEvent) -> UiActionResult {
+    match key {
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.command_palette.is_open = false;
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            if !state.command_palette.items.is_empty() {
+                if state.command_palette.selected == 0 {
+                    state.command_palette.selected = state.command_palette.items.len() - 1;
+                } else {
+                    state.command_palette.selected -= 1;
+                }
+            }
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            if !state.command_palette.items.is_empty() {
+                state.command_palette.selected =
+                    (state.command_palette.selected + 1) % state.command_palette.items.len();
+            }
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            if !state.command_palette.items.is_empty() {
+                UiActionResult::action(UiAction::CommandPaletteSubmit)
+            } else {
+                state.command_palette.is_open = false;
+                UiActionResult::handled(true)
+            }
+        }
+        _ => {
+            // Stub for filtering items if we had many, for now just handle basic text if needed
+            // but the spec just says "Add 'Export Selected to LLM' command".
+            UiActionResult::handled(false)
+        }
     }
 }
 
@@ -415,7 +490,6 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
     }
 }
 
-
 fn handle_composer_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> UiActionResult {
     match key {
         KeyEvent {
@@ -648,6 +722,27 @@ fn toggle_message_selection(state: &mut UiState) -> bool {
         return false;
     };
     state.message_view.toggle_selection(message_id);
+    true
+}
+
+pub fn select_all_in_view(state: &mut UiState) -> bool {
+    if state.messages.is_empty() {
+        return false;
+    }
+    let scroll = state.message_view.pane.scroll_vertical;
+    let page_size = state.message_view.pane.page_size;
+
+    let mut current_offset = 0;
+    for message in &state.messages {
+        let line_count = message_line_count(message);
+        if current_offset + line_count > scroll && current_offset < scroll + page_size {
+            state.message_view.selected_ids.insert(message.id);
+        }
+        current_offset += line_count;
+        if current_offset >= scroll + page_size {
+            break;
+        }
+    }
     true
 }
 
