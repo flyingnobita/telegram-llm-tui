@@ -824,6 +824,16 @@ fn draw_key_hints(frame: &mut Frame, state: &UiState, area: Rect) {
     ));
     spans.push(Span::raw(" Next Pane "));
 
+    spans.push(Span::raw(" | "));
+    spans.push(Span::styled(
+        " Ctrl+q ",
+        Style::default()
+            .add_modifier(Modifier::BOLD)
+            .bg(Color::DarkGray)
+            .fg(Color::White),
+    ));
+    spans.push(Span::raw(" Quit "));
+
     let line = Line::from(spans);
     let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Reset));
     frame.render_widget(paragraph, area);
