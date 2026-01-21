@@ -45,10 +45,17 @@ pub struct MessageItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UiFocus {
     Chats,
+    ChatSearch,
     #[default]
     Messages,
     Composer,
     Search,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ChatSearchState {
+    pub is_open: bool,
+    pub query: InputState,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -210,6 +217,7 @@ pub struct UiState {
     pub focus: UiFocus,
     pub input: InputState,
     pub chats: Vec<ChatListItem>,
+    pub chat_search: ChatSearchState,
     pub messages: Vec<MessageItem>,
     pub message_view: MessageViewState,
     pub draft_modal: DraftModalState,
@@ -228,6 +236,7 @@ impl Default for UiState {
             focus: UiFocus::default(),
             input: InputState::default(),
             chats: Vec::new(),
+            chat_search: ChatSearchState::default(),
             messages: Vec::new(),
             message_view: MessageViewState::default(),
             draft_modal: DraftModalState::default(),
@@ -446,12 +455,16 @@ fn is_message_focus(focus: UiFocus) -> bool {
     matches!(focus, UiFocus::Messages | UiFocus::Search)
 }
 
+fn is_chat_focus(focus: UiFocus) -> bool {
+    matches!(focus, UiFocus::Chats | UiFocus::ChatSearch)
+}
+
 pub fn draw(frame: &mut Frame, state: &UiState) {
     let area = frame.size();
     let layout = layout_areas(area, state.chat_list_width);
     let overlay_active =
         state.draft_modal.is_open || state.command_palette.is_open || state.log_view.is_open;
-    let chat_focused = !overlay_active && state.focus == UiFocus::Chats;
+    let chat_focused = !overlay_active && is_chat_focus(state.focus);
     let message_focused = !overlay_active && is_message_focus(state.focus);
     let composer_focused = !overlay_active && state.focus == UiFocus::Composer;
     let composer_cursor_visible = composer_focused && state.composer_cursor_visible;
@@ -475,8 +488,18 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
     chat_state.select(selected_chat);
     *chat_state.offset_mut() = state.chat_list_pane.scroll_vertical;
 
+    let chat_title = if state.chat_search.is_open || !state.chat_search.query.text.is_empty() {
+        if state.chat_search.query.text.is_empty() {
+            "Chats (search)".to_string()
+        } else {
+            format!("Chats (search: {})", state.chat_search.query.text)
+        }
+    } else {
+        "Chats".to_string()
+    };
+
     let chat_block = Block::default()
-        .title("Chats")
+        .title(chat_title)
         .borders(Borders::ALL)
         .border_style(focus_border_style(chat_focused));
     let chat_list =
@@ -793,6 +816,11 @@ fn key_hints_for_focus(focus: UiFocus) -> Vec<(&'static str, &'static str)> {
             ("j/k", "Nav"),
             ("Enter", "Select"),
             ("/", "Search"),
+        ],
+        UiFocus::ChatSearch => vec![
+            ("Esc", "Cancel"),
+            ("Enter", "Done"),
+            ("Up/Down", "Nav"),
         ],
         UiFocus::Messages => vec![
             ("j/k", "Scroll"),

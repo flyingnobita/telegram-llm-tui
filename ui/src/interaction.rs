@@ -17,6 +17,7 @@ pub enum KeymapStyle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiAction {
     ComposerSubmit,
+    TriggerRefresh,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +88,7 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         UiFocus::Messages => UiActionResult::handled(handle_messages_key(state, key, style)),
         UiFocus::Composer => handle_composer_key(state, key, style),
         UiFocus::Search => UiActionResult::handled(handle_search_key(state, key)),
+        UiFocus::ChatSearch => handle_chat_search_key(state, key),
     }
 }
 
@@ -96,6 +98,7 @@ fn cycle_focus(state: &mut UiState) {
         UiFocus::Messages => UiFocus::Composer,
         UiFocus::Composer => UiFocus::Chats,
         UiFocus::Search => UiFocus::Messages,
+        UiFocus::ChatSearch => UiFocus::Messages,
     };
 }
 
@@ -105,6 +108,7 @@ fn cycle_focus_back(state: &mut UiState) {
         UiFocus::Messages => UiFocus::Chats,
         UiFocus::Composer => UiFocus::Messages,
         UiFocus::Search => UiFocus::Messages,
+        UiFocus::ChatSearch => UiFocus::Messages,
     };
 }
 
@@ -214,7 +218,63 @@ fn handle_chats_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> b
             state.focus = UiFocus::Composer;
             true
         }
+        (KeyCode::Char('/'), _) => {
+            state.focus = UiFocus::ChatSearch;
+            state.chat_search.is_open = true;
+            true
+        }
         _ => false,
+    }
+}
+
+fn handle_chat_search_key(state: &mut UiState, key: KeyEvent) -> UiActionResult {
+    match key {
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.chat_search.is_open = false;
+            state.chat_search.query = InputState::default();
+            state.focus = UiFocus::Chats;
+            UiActionResult::action(UiAction::TriggerRefresh)
+        }
+        KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.chat_search.is_open = false;
+            state.chat_search.query = InputState::default();
+            state.focus = UiFocus::Messages;
+            UiActionResult::action(UiAction::TriggerRefresh)
+        }
+        KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            move_chat_selection(&mut state.chats, -1);
+            ensure_chat_list_selection_visible(state);
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            move_chat_selection(&mut state.chats, 1);
+            ensure_chat_list_selection_visible(state);
+            UiActionResult::handled(true)
+        }
+        _ => {
+            let handled = handle_text_key(&mut state.chat_search.query, key);
+            if handled {
+                UiActionResult::action(UiAction::TriggerRefresh)
+            } else {
+                UiActionResult::handled(false)
+            }
+        }
     }
 }
 
@@ -1003,5 +1063,38 @@ mod tests {
             KeymapStyle::Vscode,
         );
         assert_eq!(state.message_view.pane.scroll_horizontal, 0);
+    }
+
+    #[test]
+    fn opens_chat_search_with_slash() {
+        let mut state = UiState::default();
+        state.focus = UiFocus::Chats;
+
+        let result = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(result.handled);
+        assert_eq!(state.focus, UiFocus::ChatSearch);
+        assert!(state.chat_search.is_open);
+    }
+
+    #[test]
+    fn chat_search_typing_emits_refresh() {
+        let mut state = UiState::default();
+        state.focus = UiFocus::ChatSearch;
+        state.chat_search.is_open = true;
+
+        let result = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(result.handled);
+        assert_eq!(result.action, Some(UiAction::TriggerRefresh));
+        assert_eq!(state.chat_search.query.text, "a");
     }
 }

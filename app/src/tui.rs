@@ -163,14 +163,22 @@ fn handle_key_event(
         ui_bridge.refresh(cache_manager);
     }
     if let Some(action) = result.action {
-        handle_ui_action(action, ui_bridge, send_pipeline);
+        handle_ui_action(action, ui_bridge, send_pipeline, cache_manager);
     }
     false
 }
 
-fn handle_ui_action(action: UiAction, ui_bridge: &mut UiCacheBridge, send_pipeline: &SendPipeline) {
+fn handle_ui_action(
+    action: UiAction,
+    ui_bridge: &mut UiCacheBridge,
+    send_pipeline: &SendPipeline,
+    cache_manager: &CacheManager,
+) {
     match action {
         UiAction::ComposerSubmit => handle_composer_submit(ui_bridge, send_pipeline),
+        UiAction::TriggerRefresh => {
+            ui_bridge.refresh(cache_manager);
+        }
     }
 }
 
