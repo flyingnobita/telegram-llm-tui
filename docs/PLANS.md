@@ -79,9 +79,15 @@ notifications.
    configurable keybindings, resize handling, mouse optional.
 6. [ ] (3.4) Notifications: status bar for connection state; optional desktop
    notifications via feature flag.
-7. [ ] (3.5) Improve TUI UI/UX: adopt lazygit-like panel-based layout,
+7. [x] (3.5) Improve TUI UI/UX: adopt lazygit-like panel-based layout,
    consistent keybindings/focus model, bottom key hints, and single-keystroke
    common flows.
+8. [ ] (3.6) Implement Chat List Search (`/` key): filter chats by title.
+9. [ ] (3.7) Enable `j`/`k` navigation in all keymap styles (currently Vim-only).
+10. [ ] (3.8) Enable `/` (Search) in Messages in all keymap styles (currently
+    Vim-only).
+11. [ ] (3.9) Enable `i` (Focus Composer) in all keymap styles (currently
+    Vim-only).
 
 ## 4 LLM workflow
 

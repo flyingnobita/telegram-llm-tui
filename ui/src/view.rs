@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
+use ratatui::text::{Line, Span};
 
 use crate::input::InputState;
 use crate::pane::{
@@ -246,12 +247,17 @@ struct LayoutAreas {
     chat_list: Rect,
     messages: Rect,
     composer: Rect,
+    key_hints: Rect,
 }
 
 fn layout_areas(area: Rect, chat_list_width: u16) -> LayoutAreas {
     let rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(3)])
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(3),
+            Constraint::Length(1),
+        ])
         .split(area);
 
     let chat_list_width = clamp_chat_list_width(area.width, chat_list_width);
@@ -265,6 +271,7 @@ fn layout_areas(area: Rect, chat_list_width: u16) -> LayoutAreas {
         chat_list: columns[0],
         messages: columns[1],
         composer: rows[1],
+        key_hints: rows[2],
     }
 }
 
@@ -518,6 +525,8 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
         PaneConfig::composer_pane(),
     );
 
+    draw_key_hints(frame, state, layout.key_hints);
+
     if state.draft_modal.is_open {
         draw_draft_modal(frame, state, area);
     }
@@ -750,6 +759,59 @@ fn draw_command_palette(frame: &mut Frame, state: &UiState, area: Rect) {
     frame.render_stateful_widget(actions, palette_chunks[1], &mut palette_state);
 }
 
+fn draw_key_hints(frame: &mut Frame, state: &UiState, area: Rect) {
+    let hints = key_hints_for_focus(state.focus);
+    let mut spans = Vec::new();
+    for (i, (key, desc)) in hints.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw(" | "));
+        }
+        spans.push(Span::styled(
+            format!(" {} ", key),
+            Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray).fg(Color::White),
+        ));
+        spans.push(Span::raw(format!(" {} ", desc)));
+    }
+    // Add global hints
+    if !hints.is_empty() {
+        spans.push(Span::raw(" | "));
+    }
+    spans.push(Span::styled(
+        " Tab ",
+        Style::default().add_modifier(Modifier::BOLD).bg(Color::DarkGray).fg(Color::White),
+    ));
+    spans.push(Span::raw(" Next Pane "));
+    
+    let line = Line::from(spans);
+    let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Reset));
+    frame.render_widget(paragraph, area);
+}
+
+fn key_hints_for_focus(focus: UiFocus) -> Vec<(&'static str, &'static str)> {
+    match focus {
+        UiFocus::Chats => vec![
+            ("j/k", "Nav"),
+            ("Enter", "Select"),
+            ("/", "Search"),
+        ],
+        UiFocus::Messages => vec![
+            ("j/k", "Scroll"),
+            ("Space", "Select"),
+            ("/", "Search"),
+            ("i", "Composer"),
+        ],
+        UiFocus::Composer => vec![
+            ("Esc", "Unfocus"),
+            ("Enter", "Send"),
+        ],
+        UiFocus::Search => vec![
+            ("Esc", "Cancel"),
+            ("Enter", "Jump"),
+            ("Up/Down", "Nav"),
+        ],
+    }
+}
+
 pub fn log_window_page_size(area: Rect) -> usize {
     let text_area = log_window_text_area(area);
     text_area.height.max(1) as usize
@@ -808,7 +870,7 @@ mod tests {
     #[test]
     fn message_viewport_page_size_reserves_composer_and_border() {
         let area = Rect::new(0, 0, 10, 10);
-        assert_eq!(message_viewport_page_size(area, DEFAULT_CHAT_LIST_WIDTH), 4);
+        assert_eq!(message_viewport_page_size(area, DEFAULT_CHAT_LIST_WIDTH), 3);
     }
 
     #[test]
@@ -848,5 +910,19 @@ mod tests {
 
         assert_eq!(message_line_offset(&state.messages, 1), 3);
         assert_eq!(message_max_scroll(&state), 2);
+    }
+
+    #[test]
+    fn key_hints_change_based_on_focus() {
+        let chats = key_hints_for_focus(UiFocus::Chats);
+        assert!(chats.iter().any(|(k, _)| *k == "Enter"));
+        assert!(!chats.iter().any(|(k, _)| *k == "i"));
+
+        let messages = key_hints_for_focus(UiFocus::Messages);
+        assert!(messages.iter().any(|(k, _)| *k == "Space"));
+        assert!(messages.iter().any(|(k, _)| *k == "i"));
+
+        let composer = key_hints_for_focus(UiFocus::Composer);
+        assert!(composer.iter().any(|(k, _)| *k == "Esc"));
     }
 }

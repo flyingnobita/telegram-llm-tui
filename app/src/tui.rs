@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn message_page_size_reserves_composer_and_border() {
         let area = Rect::new(0, 0, 10, 10);
-        assert_eq!(message_page_size(area, 32), 4);
+        assert_eq!(message_page_size(area, 32), 3);
     }
 
     #[test]

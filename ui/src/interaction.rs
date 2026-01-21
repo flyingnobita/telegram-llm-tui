@@ -60,6 +60,28 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         return UiActionResult::handled(true);
     }
 
+    if key.code == KeyCode::BackTab || (key.code == KeyCode::Tab && key.modifiers == KeyModifiers::SHIFT) {
+        cycle_focus_back(state);
+        return UiActionResult::handled(true);
+    }
+
+    // Global hotkeys
+    match key.code {
+        KeyCode::Char('1') if key.modifiers == KeyModifiers::NONE => {
+            state.focus = UiFocus::Chats;
+            return UiActionResult::handled(true);
+        }
+        KeyCode::Char('2') if key.modifiers == KeyModifiers::NONE => {
+            state.focus = UiFocus::Messages;
+            return UiActionResult::handled(true);
+        }
+        KeyCode::Char('3') if key.modifiers == KeyModifiers::NONE => {
+            state.focus = UiFocus::Composer;
+            return UiActionResult::handled(true);
+        }
+        _ => {}
+    }
+
     match state.focus {
         UiFocus::Chats => UiActionResult::handled(handle_chats_key(state, key, style)),
         UiFocus::Messages => UiActionResult::handled(handle_messages_key(state, key, style)),
@@ -73,6 +95,15 @@ fn cycle_focus(state: &mut UiState) {
         UiFocus::Chats => UiFocus::Messages,
         UiFocus::Messages => UiFocus::Composer,
         UiFocus::Composer => UiFocus::Chats,
+        UiFocus::Search => UiFocus::Messages,
+    };
+}
+
+fn cycle_focus_back(state: &mut UiState) {
+    state.focus = match state.focus {
+        UiFocus::Chats => UiFocus::Composer,
+        UiFocus::Messages => UiFocus::Chats,
+        UiFocus::Composer => UiFocus::Messages,
         UiFocus::Search => UiFocus::Messages,
     };
 }

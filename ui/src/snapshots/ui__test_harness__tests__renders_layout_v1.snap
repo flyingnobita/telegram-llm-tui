@@ -1,12 +1,12 @@
 ---
 source: ui/src/test_harness.rs
+assertion_line: 138
 expression: rendered
 ---
 ┌Chats─────────────────────────┐┌Messages (search: draft)──────────────────────┐
 │General                      ▲││  [  ] [09:12] Ada: Morning team             ▲│
 │Product (3)                  █││> [x ] [09:13] You: Morning, syncing on layou█│
 │Design (1)                   █││  [ *] [09:15] Ada: Need the LLM draft soon  █│
-│                             █││                                             █│
 │                             █││                                             █│
 │                             █││                                             █│
 │                             █││                                             █│
@@ -22,3 +22,4 @@ expression: rendered
 ┌Composer──────────────────────────────────────────────────────────────────────┐
 │drafting a reply                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
+ j/k  Scroll  |  Space  Select  |  /  Search  |  i  Composer  |  Tab  Next Pane
