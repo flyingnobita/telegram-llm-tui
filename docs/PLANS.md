@@ -55,7 +55,7 @@ persistence.
    support text, reply, edit, delete; queue unsent messages when offline.
 4. [x] (2.4) Add minimal persistence for chat metadata and message cache to
    reduce network round-trips; keep caches small and pluggable.
-5. [ ] (2.5) Bootstrap recent message history on startup for all chats (default
+5. [x] (2.5) Bootstrap recent message history on startup for all chats (default
    100 per chat, cached).
 
 ## 3 TUI experience
