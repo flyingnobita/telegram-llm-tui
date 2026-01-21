@@ -8,6 +8,7 @@ This repository follows **Agent Native Development (AND)** principles. The appli
 
 - **Context First:** Before starting any task, read `PLANS.md` (Context) and `SPECS.md` (Requirements).
 - **Verify (CRITICAL):** You must be able to run the code/tests yourself. **Task completion requires successful execution of verification steps.** If the environment is broken, fixing it is the first task.
+- **Post-Merge Verification:** After any merge, rebase, or conflict resolution, you **MUST** run the full test suite (`cargo test --workspace` or equivalent) to ensure no regressions were introduced. Do not ask the user to verify.
 - **Plan Updates:** If a task changes the state of a plan (e.g., completing a step), you must update `docs/plan-progress/` or `PLANS.md` as part of the PR/commit.
 - **ADR Adherence:** Check `docs/adr/` before major decisions. If a decision contradicts an ADR, stop and ask.
 
