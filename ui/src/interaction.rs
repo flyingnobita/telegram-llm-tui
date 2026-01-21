@@ -1167,8 +1167,10 @@ mod tests {
 
     #[test]
     fn opens_chat_search_with_slash() {
-        let mut state = UiState::default();
-        state.focus = UiFocus::Chats;
+        let mut state = UiState {
+            focus: UiFocus::Chats,
+            ..Default::default()
+        };
 
         let result = handle_ui_key(
             &mut state,
@@ -1183,8 +1185,10 @@ mod tests {
 
     #[test]
     fn chat_search_typing_emits_refresh() {
-        let mut state = UiState::default();
-        state.focus = UiFocus::ChatSearch;
+        let mut state = UiState {
+            focus: UiFocus::ChatSearch,
+            ..Default::default()
+        };
         state.chat_search.is_open = true;
 
         let result = handle_ui_key(
@@ -1238,8 +1242,10 @@ mod tests {
 
     #[test]
     fn unified_composer_focus_key_works_in_vscode_mode() {
-        let mut state = UiState::default();
-        state.focus = UiFocus::Chats;
+        let mut state = UiState {
+            focus: UiFocus::Chats,
+            ..Default::default()
+        };
 
         // Test 'i' in Vscode mode
         let _ = handle_ui_key(
