@@ -79,6 +79,9 @@ notifications.
    configurable keybindings, resize handling, mouse optional.
 6. [ ] (3.4) Notifications: status bar for connection state; optional desktop
    notifications via feature flag.
+7. [ ] (3.5) Improve TUI UI/UX: adopt lazygit-like panel-based layout,
+   consistent keybindings/focus model, bottom key hints, and single-keystroke
+   common flows.
 
 ## 4 LLM workflow
 
