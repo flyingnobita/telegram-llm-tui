@@ -21,14 +21,14 @@ use tracing::{info, warn};
 use telegram_llm_core::telegram::{CacheManager, EventReceiver, MessageId, SendPipeline, SendRequest};
 use ui::input::InputState;
 use ui::interaction::{handle_ui_key, KeymapStyle, UiAction};
-use ui::view::UiState;
 use ui::view::{
     chat_list_text_area, clamp_chat_list_scroll, composer_text_area,
     ensure_chat_list_selection_visible, log_view_max_horizontal_scroll, log_view_max_scroll,
     log_window_text_area, message_max_horizontal_scroll, message_viewport_page_size,
-    message_viewport_width,
+    message_viewport_width, UiFocus, UiState,
 };
 
+use crate::command::UiCommand;
 use crate::llm_workflow::format_transcript;
 use crate::ui_state::UiCacheBridge;
 use crate::ConsoleLogGate;
@@ -53,6 +53,7 @@ pub async fn run_tui_loop(
     let _console_guard = ConsoleLogGuard::new(console_gate);
     let mut tui = Tui::new()?;
     let (input_tx, mut input_rx) = mpsc::unbounded_channel();
+    let (ui_command_tx, mut ui_command_rx) = mpsc::unbounded_channel();
     let running = Arc::new(AtomicBool::new(true));
     let input_handle = spawn_input_thread(running.clone(), input_tx);
 
@@ -70,7 +71,14 @@ pub async fn run_tui_loop(
             _ = ticker.tick() => {}
             maybe_input = input_rx.recv() => {
                 if let Some(event) = maybe_input {
-                    if handle_input_event(event, ui_bridge, cache_manager, keymap, send_pipeline) {
+                    if handle_input_event(
+                        event,
+                        ui_bridge,
+                        cache_manager,
+                        keymap,
+                        send_pipeline,
+                        ui_command_tx.clone(),
+                    ) {
                         should_exit = true;
                     }
                 } else {
@@ -97,6 +105,11 @@ pub async fn run_tui_loop(
                     should_exit = true;
                 } else {
                     ui_bridge.refresh(cache_manager);
+                }
+            }
+            command = ui_command_rx.recv() => {
+                if let Some(command) = command {
+                    handle_ui_command(command, ui_bridge);
                 }
             }
             _ = tokio::signal::ctrl_c() => {
@@ -133,11 +146,17 @@ fn handle_input_event(
     cache_manager: &CacheManager,
     keymap: KeymapStyle,
     send_pipeline: &SendPipeline,
+    ui_command_tx: mpsc::UnboundedSender<UiCommand>,
 ) -> bool {
     match event {
-        InputEvent::Key(key) => {
-            handle_key_event(key, ui_bridge, cache_manager, keymap, send_pipeline)
-        }
+        InputEvent::Key(key) => handle_key_event(
+            key,
+            ui_bridge,
+            cache_manager,
+            keymap,
+            send_pipeline,
+            ui_command_tx,
+        ),
         InputEvent::Resize(width, height) => {
             apply_page_size(&mut ui_bridge.state, Rect::new(0, 0, width, height));
             false
@@ -151,6 +170,7 @@ fn handle_key_event(
     cache_manager: &CacheManager,
     keymap: KeymapStyle,
     send_pipeline: &SendPipeline,
+    ui_command_tx: mpsc::UnboundedSender<UiCommand>,
 ) -> bool {
     if matches!(key.kind, KeyEventKind::Release) {
         return false;
@@ -164,7 +184,13 @@ fn handle_key_event(
         ui_bridge.refresh(cache_manager);
     }
     if let Some(action) = result.action {
-        handle_ui_action(action, ui_bridge, send_pipeline, cache_manager);
+        handle_ui_action(
+            action,
+            ui_bridge,
+            send_pipeline,
+            cache_manager,
+            ui_command_tx,
+        );
     }
     false
 }
@@ -174,6 +200,7 @@ fn handle_ui_action(
     ui_bridge: &mut UiCacheBridge,
     send_pipeline: &SendPipeline,
     cache_manager: &CacheManager,
+    ui_command_tx: mpsc::UnboundedSender<UiCommand>,
 ) {
     match action {
         UiAction::ComposerSubmit => handle_composer_submit(ui_bridge, send_pipeline),
@@ -181,12 +208,26 @@ fn handle_ui_action(
             ui_bridge.refresh(cache_manager);
         }
         UiAction::ExportSelected => {
-            handle_export_selected(ui_bridge, cache_manager);
+            handle_export_selected(ui_bridge, cache_manager, ui_command_tx);
         }
     }
 }
 
-fn handle_export_selected(ui_bridge: &mut UiCacheBridge, cache_manager: &CacheManager) {
+fn handle_ui_command(command: UiCommand, ui_bridge: &mut UiCacheBridge) {
+    match command {
+        UiCommand::UpdateComposer(text) => {
+            ui_bridge.state.input.text = text;
+            ui_bridge.state.input.cursor = ui_bridge.state.input.text.len();
+            ui_bridge.state.focus = UiFocus::Composer;
+        }
+    }
+}
+
+fn handle_export_selected(
+    ui_bridge: &mut UiCacheBridge,
+    cache_manager: &CacheManager,
+    ui_command_tx: mpsc::UnboundedSender<UiCommand>,
+) {
     let selected_ids: Vec<MessageId> = ui_bridge
         .state
         .message_view
@@ -202,7 +243,19 @@ fn handle_export_selected(ui_bridge: &mut UiCacheBridge, cache_manager: &CacheMa
 
     let messages = cache_manager.get_messages_by_ids(selected_ids);
     let transcript = format_transcript(&messages);
-    info!(transcript = %transcript, "exporting transcript to LLM (stub)");
+    info!("exporting transcript to LLM (stub)");
+
+    tokio::spawn(async move {
+        // Stub: Simulate LLM processing delay
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let draft = format!(
+            "Here is a draft based on the transcript:\n\n> {}\n\nResponse: [Your text here]",
+            transcript.lines().take(1).next().unwrap_or("...")
+        );
+        if let Err(err) = ui_command_tx.send(UiCommand::UpdateComposer(draft)) {
+            warn!(error = %err, "failed to send update composer command");
+        }
+    });
 }
 
 fn handle_composer_submit(ui_bridge: &mut UiCacheBridge, send_pipeline: &SendPipeline) {

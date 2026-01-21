@@ -97,7 +97,7 @@ pipeline -> prompt kit -> safety.
 
 1. [x] (4.1) Export pipeline: select messages -> structured transcript (with
    authors or timestamps) -> send to provider with chosen prompt.
-2. [ ] (4.2) Draft pipeline: receive LLM draft -> show diff vs last user
+2. [x] (4.2) Draft pipeline: receive LLM draft -> show diff vs last user
    draft -> allow edit -> user explicitly sends.
 3. [ ] (4.3) Prompt kit: summarize thread, propose reply, extract action
    items, sentiment or priority tagging; keep prompts versioned.

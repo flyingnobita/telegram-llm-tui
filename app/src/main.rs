@@ -1,3 +1,4 @@
+mod command;
 mod config;
 mod llm_workflow;
 mod prompt;
