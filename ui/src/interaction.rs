@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::input::{handle_key as handle_text_key, InputState};
 use crate::view::{
     chat_list_max_horizontal_scroll, ensure_chat_list_selection_visible,
-    log_view_max_horizontal_scroll, log_view_max_scroll, message_line_offset,
+    log_view_max_horizontal_scroll, log_view_max_scroll, message_line_count, message_line_offset,
     message_max_horizontal_scroll, message_max_scroll, ChatListItem, UiFocus, UiState,
 };
 
@@ -17,6 +17,11 @@ pub enum KeymapStyle {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiAction {
     ComposerSubmit,
+    TriggerRefresh,
+    ExportSelected,
+    OpenCommandPalette,
+    CommandPaletteSubmit,
+    SelectAllInView,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,9 +51,24 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         return UiActionResult::handled(handle_log_view_key(state, key, style));
     }
 
+    if state.command_palette.is_open {
+        return handle_command_palette_key(state, key);
+    }
+
     if key.code == KeyCode::Char('l') && key.modifiers == KeyModifiers::CONTROL {
         state.log_view.is_open = true;
         return UiActionResult::handled(true);
+    }
+
+    if key.code == KeyCode::Char('p') && key.modifiers == KeyModifiers::CONTROL {
+        return UiActionResult::action(UiAction::OpenCommandPalette);
+    }
+
+    if key.code == KeyCode::Char('a')
+        && key.modifiers == KeyModifiers::CONTROL
+        && state.focus == UiFocus::Messages
+    {
+        return UiActionResult::action(UiAction::SelectAllInView);
     }
 
     if state.message_view.search.is_open && state.focus != UiFocus::Search {
@@ -60,7 +80,9 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         return UiActionResult::handled(true);
     }
 
-    if key.code == KeyCode::BackTab || (key.code == KeyCode::Tab && key.modifiers == KeyModifiers::SHIFT) {
+    if key.code == KeyCode::BackTab
+        || (key.code == KeyCode::Tab && key.modifiers == KeyModifiers::SHIFT)
+    {
         cycle_focus_back(state);
         return UiActionResult::handled(true);
     }
@@ -79,6 +101,9 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
             state.focus = UiFocus::Composer;
             return UiActionResult::handled(true);
         }
+        KeyCode::Char('e') if key.modifiers == KeyModifiers::CONTROL => {
+            return UiActionResult::action(UiAction::ExportSelected);
+        }
         _ => {}
     }
 
@@ -87,6 +112,62 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         UiFocus::Messages => UiActionResult::handled(handle_messages_key(state, key, style)),
         UiFocus::Composer => handle_composer_key(state, key, style),
         UiFocus::Search => UiActionResult::handled(handle_search_key(state, key)),
+        UiFocus::ChatSearch => handle_chat_search_key(state, key),
+    }
+}
+
+fn handle_command_palette_key(state: &mut UiState, key: KeyEvent) -> UiActionResult {
+    match key {
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.command_palette.is_open = false;
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            if !state.command_palette.items.is_empty() {
+                if state.command_palette.selected == 0 {
+                    state.command_palette.selected = state.command_palette.items.len() - 1;
+                } else {
+                    state.command_palette.selected -= 1;
+                }
+            }
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            if !state.command_palette.items.is_empty() {
+                state.command_palette.selected =
+                    (state.command_palette.selected + 1) % state.command_palette.items.len();
+            }
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            if !state.command_palette.items.is_empty() {
+                UiActionResult::action(UiAction::CommandPaletteSubmit)
+            } else {
+                state.command_palette.is_open = false;
+                UiActionResult::handled(true)
+            }
+        }
+        _ => {
+            // Stub for filtering items if we had many, for now just handle basic text if needed
+            // but the spec just says "Add 'Export Selected to LLM' command".
+            UiActionResult::handled(false)
+        }
     }
 }
 
@@ -96,6 +177,7 @@ fn cycle_focus(state: &mut UiState) {
         UiFocus::Messages => UiFocus::Composer,
         UiFocus::Composer => UiFocus::Chats,
         UiFocus::Search => UiFocus::Messages,
+        UiFocus::ChatSearch => UiFocus::Messages,
     };
 }
 
@@ -105,10 +187,11 @@ fn cycle_focus_back(state: &mut UiState) {
         UiFocus::Messages => UiFocus::Chats,
         UiFocus::Composer => UiFocus::Messages,
         UiFocus::Search => UiFocus::Messages,
+        UiFocus::ChatSearch => UiFocus::Messages,
     };
 }
 
-fn handle_log_view_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> bool {
+fn handle_log_view_key(state: &mut UiState, key: KeyEvent, _style: KeymapStyle) -> bool {
     match key {
         KeyEvent {
             code: KeyCode::Esc,
@@ -170,12 +253,12 @@ fn handle_log_view_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             code: KeyCode::Char('k'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => scroll_log_view(state, -1),
+        } => scroll_log_view(state, -1),
         KeyEvent {
             code: KeyCode::Char('j'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => scroll_log_view(state, 1),
+        } => scroll_log_view(state, 1),
         _ => false,
     }
 }
@@ -192,12 +275,12 @@ fn handle_chats_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> b
             ensure_chat_list_selection_visible(state);
             true
         }
-        (KeyCode::Char('k'), KeymapStyle::Vim) => {
+        (KeyCode::Char('k'), _) => {
             move_chat_selection(&mut state.chats, -1);
             ensure_chat_list_selection_visible(state);
             true
         }
-        (KeyCode::Char('j'), KeymapStyle::Vim) => {
+        (KeyCode::Char('j'), _) => {
             move_chat_selection(&mut state.chats, 1);
             ensure_chat_list_selection_visible(state);
             true
@@ -210,11 +293,67 @@ fn handle_chats_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> b
             state.focus = UiFocus::Messages;
             true
         }
-        (KeyCode::Char('i'), KeymapStyle::Vim) => {
+        (KeyCode::Char('i'), _) => {
             state.focus = UiFocus::Composer;
             true
         }
+        (KeyCode::Char('/'), _) => {
+            state.focus = UiFocus::ChatSearch;
+            state.chat_search.is_open = true;
+            true
+        }
         _ => false,
+    }
+}
+
+fn handle_chat_search_key(state: &mut UiState, key: KeyEvent) -> UiActionResult {
+    match key {
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.chat_search.is_open = false;
+            state.chat_search.query = InputState::default();
+            state.focus = UiFocus::Chats;
+            UiActionResult::action(UiAction::TriggerRefresh)
+        }
+        KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.chat_search.is_open = false;
+            state.chat_search.query = InputState::default();
+            state.focus = UiFocus::Messages;
+            UiActionResult::action(UiAction::TriggerRefresh)
+        }
+        KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            move_chat_selection(&mut state.chats, -1);
+            ensure_chat_list_selection_visible(state);
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            move_chat_selection(&mut state.chats, 1);
+            ensure_chat_list_selection_visible(state);
+            UiActionResult::handled(true)
+        }
+        _ => {
+            let handled = handle_text_key(&mut state.chat_search.query, key);
+            if handled {
+                UiActionResult::action(UiAction::TriggerRefresh)
+            } else {
+                UiActionResult::handled(false)
+            }
+        }
     }
 }
 
@@ -224,7 +363,7 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             code: KeyCode::Char('i'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => {
+        } => {
             state.focus = UiFocus::Composer;
             true
         }
@@ -232,7 +371,7 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             code: KeyCode::Char('/'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => open_search(state),
+        } => open_search(state),
         KeyEvent {
             code: KeyCode::Char('n'),
             modifiers: KeyModifiers::NONE,
@@ -247,12 +386,12 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             code: KeyCode::Char('j'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => move_message_cursor(state, 1),
+        } => move_message_cursor(state, 1),
         KeyEvent {
             code: KeyCode::Char('k'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => move_message_cursor(state, -1),
+        } => move_message_cursor(state, -1),
         KeyEvent {
             code: KeyCode::Char('h'),
             modifiers: KeyModifiers::NONE,
@@ -583,6 +722,27 @@ fn toggle_message_selection(state: &mut UiState) -> bool {
         return false;
     };
     state.message_view.toggle_selection(message_id);
+    true
+}
+
+pub fn select_all_in_view(state: &mut UiState) -> bool {
+    if state.messages.is_empty() {
+        return false;
+    }
+    let scroll = state.message_view.pane.scroll_vertical;
+    let page_size = state.message_view.pane.page_size;
+
+    let mut current_offset = 0;
+    for message in &state.messages {
+        let line_count = message_line_count(message);
+        if current_offset + line_count > scroll && current_offset < scroll + page_size {
+            state.message_view.selected_ids.insert(message.id);
+        }
+        current_offset += line_count;
+        if current_offset >= scroll + page_size {
+            break;
+        }
+    }
     true
 }
 
@@ -1003,5 +1163,96 @@ mod tests {
             KeymapStyle::Vscode,
         );
         assert_eq!(state.message_view.pane.scroll_horizontal, 0);
+    }
+
+    #[test]
+    fn opens_chat_search_with_slash() {
+        let mut state = UiState {
+            focus: UiFocus::Chats,
+            ..Default::default()
+        };
+
+        let result = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(result.handled);
+        assert_eq!(state.focus, UiFocus::ChatSearch);
+        assert!(state.chat_search.is_open);
+    }
+
+    #[test]
+    fn chat_search_typing_emits_refresh() {
+        let mut state = UiState {
+            focus: UiFocus::ChatSearch,
+            ..Default::default()
+        };
+        state.chat_search.is_open = true;
+
+        let result = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(result.handled);
+        assert_eq!(result.action, Some(UiAction::TriggerRefresh));
+        assert_eq!(state.chat_search.query.text, "a");
+    }
+
+    #[test]
+    fn unified_navigation_keys_work_in_vscode_mode() {
+        let mut state = sample_state();
+        state.focus = UiFocus::Messages;
+        state.message_view.cursor = Some(0);
+
+        // Test 'j' in Vscode mode
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.message_view.cursor, Some(1));
+
+        // Test 'k' in Vscode mode
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.message_view.cursor, Some(0));
+    }
+
+    #[test]
+    fn unified_search_key_works_in_vscode_mode() {
+        let mut state = sample_state();
+        state.focus = UiFocus::Messages;
+
+        // Test '/' in Vscode mode
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert!(state.message_view.search.is_open);
+        assert_eq!(state.focus, UiFocus::Search);
+    }
+
+    #[test]
+    fn unified_composer_focus_key_works_in_vscode_mode() {
+        let mut state = UiState {
+            focus: UiFocus::Chats,
+            ..Default::default()
+        };
+
+        // Test 'i' in Vscode mode
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.focus, UiFocus::Composer);
     }
 }

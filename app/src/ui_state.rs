@@ -55,7 +55,8 @@ impl UiCacheBridge {
 
     pub fn refresh(&mut self, cache: &CacheManager) -> Option<ChatId> {
         let summaries = cache.chat_summaries();
-        let (chat_items, selected_chat) = map_chat_summaries(&summaries, self.selected_chat);
+        let query = self.state.chat_search.query.text.trim();
+        let (chat_items, selected_chat) = map_chat_summaries(&summaries, self.selected_chat, query);
         self.selected_chat = selected_chat;
         self.state.chats = chat_items;
         let chat_titles = resolve_chat_titles(&summaries);
@@ -92,6 +93,7 @@ impl UiCacheBridge {
 fn map_chat_summaries(
     summaries: &[ChatSummary],
     selected_chat: Option<ChatId>,
+    filter_query: &str,
 ) -> (Vec<ChatListItem>, Option<ChatId>) {
     let mut sorted = summaries.to_vec();
     sorted.sort_by(|left, right| {
@@ -102,6 +104,11 @@ fn map_chat_summaries(
             ordering => ordering,
         }
     });
+
+    if !filter_query.is_empty() {
+        let needle = filter_query.to_lowercase();
+        sorted.retain(|chat| chat_title(chat).to_lowercase().contains(&needle));
+    }
 
     let resolved_selection = selected_chat
         .filter(|chat_id| sorted.iter().any(|chat| chat.chat_id == *chat_id))
@@ -405,5 +412,43 @@ mod tests {
 
         assert!(!changed);
         assert_eq!(bridge.selected_chat(), Some(ChatId(10)));
+    }
+
+    #[tokio::test]
+    async fn filters_chats_based_on_search_query() {
+        let store: Arc<dyn CacheStore> = Arc::new(InMemoryStore::default());
+        let manager = CacheManager::spawn(store, cache_config())
+            .await
+            .expect("spawn cache manager");
+
+        manager.upsert_chat(chat_summary(1, "General", 100));
+        manager.upsert_chat(chat_summary(2, "Product", 200));
+        manager.upsert_chat(chat_summary(3, "Design", 300));
+
+        let mut bridge = UiCacheBridge::new(None, 32);
+
+        // No filter
+        bridge.refresh(&manager);
+        assert_eq!(bridge.state.chats.len(), 3);
+
+        // Filter "Gen"
+        bridge.state.chat_search.query.text = "Gen".to_string();
+        bridge.refresh(&manager);
+        assert_eq!(bridge.state.chats.len(), 1);
+        assert_eq!(bridge.state.chats[0].title, "General");
+
+        // Filter "de" (matches Design)
+        bridge.state.chat_search.query.text = "de".to_string();
+        bridge.refresh(&manager);
+        assert_eq!(bridge.state.chats.len(), 1);
+        assert_eq!(bridge.state.chats[0].title, "Design");
+
+        // Filter case insensitive
+        bridge.state.chat_search.query.text = "product".to_string();
+        bridge.refresh(&manager);
+        assert_eq!(bridge.state.chats.len(), 1);
+        assert_eq!(bridge.state.chats[0].title, "Product");
+
+        manager.shutdown().await;
     }
 }

@@ -1,4 +1,6 @@
+mod command;
 mod config;
+mod llm_workflow;
 mod prompt;
 mod tui;
 mod ui_state;
