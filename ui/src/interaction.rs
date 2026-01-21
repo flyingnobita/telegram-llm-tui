@@ -18,6 +18,7 @@ pub enum KeymapStyle {
 pub enum UiAction {
     ComposerSubmit,
     TriggerRefresh,
+    ExportSelected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +80,9 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
         KeyCode::Char('3') if key.modifiers == KeyModifiers::NONE => {
             state.focus = UiFocus::Composer;
             return UiActionResult::handled(true);
+        }
+        KeyCode::Char('e') if key.modifiers == KeyModifiers::CONTROL => {
+            return UiActionResult::action(UiAction::ExportSelected);
         }
         _ => {}
     }

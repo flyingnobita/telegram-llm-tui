@@ -501,6 +501,17 @@ impl CacheManager {
         cache.unwrap_or_default()
     }
 
+    pub fn get_messages_by_ids<I>(&self, message_ids: I) -> Vec<CachedMessage>
+    where
+        I: IntoIterator<Item = MessageId>,
+    {
+        let cache = self
+            .inner
+            .read()
+            .map(|cache| cache.get_messages_by_ids(message_ids));
+        cache.unwrap_or_default()
+    }
+
     pub fn user_display_names<I>(&self, user_ids: I) -> HashMap<UserId, String>
     where
         I: IntoIterator<Item = UserId>,
@@ -617,6 +628,23 @@ impl ChatCache {
             }
             None => entry.messages.iter().cloned().collect::<Vec<_>>(),
         }
+    }
+
+    pub fn get_messages_by_ids<I>(&self, message_ids: I) -> Vec<CachedMessage>
+    where
+        I: IntoIterator<Item = MessageId>,
+    {
+        let ids: std::collections::HashSet<MessageId> = message_ids.into_iter().collect();
+        let mut result = Vec::new();
+
+        for entry in self.chats.values() {
+            for message in &entry.messages {
+                if ids.contains(&message.message_id) {
+                    result.push(message.clone());
+                }
+            }
+        }
+        result
     }
 
     pub fn apply_event(&mut self, event: &DomainEvent) -> EvictionStats {

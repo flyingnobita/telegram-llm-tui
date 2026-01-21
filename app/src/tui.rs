@@ -18,7 +18,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use telegram_llm_core::telegram::{CacheManager, EventReceiver, SendPipeline, SendRequest};
+use telegram_llm_core::telegram::{CacheManager, EventReceiver, MessageId, SendPipeline, SendRequest};
 use ui::input::InputState;
 use ui::interaction::{handle_ui_key, KeymapStyle, UiAction};
 use ui::view::UiState;
@@ -29,6 +29,7 @@ use ui::view::{
     message_viewport_width,
 };
 
+use crate::llm_workflow::format_transcript;
 use crate::ui_state::UiCacheBridge;
 use crate::ConsoleLogGate;
 
@@ -179,7 +180,29 @@ fn handle_ui_action(
         UiAction::TriggerRefresh => {
             ui_bridge.refresh(cache_manager);
         }
+        UiAction::ExportSelected => {
+            handle_export_selected(ui_bridge, cache_manager);
+        }
     }
+}
+
+fn handle_export_selected(ui_bridge: &mut UiCacheBridge, cache_manager: &CacheManager) {
+    let selected_ids: Vec<MessageId> = ui_bridge
+        .state
+        .message_view
+        .selected_ids
+        .iter()
+        .map(|id| MessageId(*id))
+        .collect();
+
+    if selected_ids.is_empty() {
+        info!("no messages selected for export");
+        return;
+    }
+
+    let messages = cache_manager.get_messages_by_ids(selected_ids);
+    let transcript = format_transcript(&messages);
+    info!(transcript = %transcript, "exporting transcript to LLM (stub)");
 }
 
 fn handle_composer_submit(ui_bridge: &mut UiCacheBridge, send_pipeline: &SendPipeline) {
