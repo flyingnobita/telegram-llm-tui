@@ -112,7 +112,7 @@ fn cycle_focus_back(state: &mut UiState) {
     };
 }
 
-fn handle_log_view_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> bool {
+fn handle_log_view_key(state: &mut UiState, key: KeyEvent, _style: KeymapStyle) -> bool {
     match key {
         KeyEvent {
             code: KeyCode::Esc,
@@ -174,12 +174,12 @@ fn handle_log_view_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             code: KeyCode::Char('k'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => scroll_log_view(state, -1),
+        } => scroll_log_view(state, -1),
         KeyEvent {
             code: KeyCode::Char('j'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => scroll_log_view(state, 1),
+        } => scroll_log_view(state, 1),
         _ => false,
     }
 }
@@ -196,12 +196,12 @@ fn handle_chats_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> b
             ensure_chat_list_selection_visible(state);
             true
         }
-        (KeyCode::Char('k'), KeymapStyle::Vim) => {
+        (KeyCode::Char('k'), _) => {
             move_chat_selection(&mut state.chats, -1);
             ensure_chat_list_selection_visible(state);
             true
         }
-        (KeyCode::Char('j'), KeymapStyle::Vim) => {
+        (KeyCode::Char('j'), _) => {
             move_chat_selection(&mut state.chats, 1);
             ensure_chat_list_selection_visible(state);
             true
@@ -214,7 +214,7 @@ fn handle_chats_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> b
             state.focus = UiFocus::Messages;
             true
         }
-        (KeyCode::Char('i'), KeymapStyle::Vim) => {
+        (KeyCode::Char('i'), _) => {
             state.focus = UiFocus::Composer;
             true
         }
@@ -284,7 +284,7 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             code: KeyCode::Char('i'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => {
+        } => {
             state.focus = UiFocus::Composer;
             true
         }
@@ -292,7 +292,7 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             code: KeyCode::Char('/'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => open_search(state),
+        } => open_search(state),
         KeyEvent {
             code: KeyCode::Char('n'),
             modifiers: KeyModifiers::NONE,
@@ -307,12 +307,12 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
             code: KeyCode::Char('j'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => move_message_cursor(state, 1),
+        } => move_message_cursor(state, 1),
         KeyEvent {
             code: KeyCode::Char('k'),
             modifiers: KeyModifiers::NONE,
             ..
-        } if style == KeymapStyle::Vim => move_message_cursor(state, -1),
+        } => move_message_cursor(state, -1),
         KeyEvent {
             code: KeyCode::Char('h'),
             modifiers: KeyModifiers::NONE,
@@ -410,6 +410,7 @@ fn handle_messages_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -
         _ => false,
     }
 }
+
 
 fn handle_composer_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> UiActionResult {
     match key {
@@ -1096,5 +1097,57 @@ mod tests {
         assert!(result.handled);
         assert_eq!(result.action, Some(UiAction::TriggerRefresh));
         assert_eq!(state.chat_search.query.text, "a");
+    }
+
+    #[test]
+    fn unified_navigation_keys_work_in_vscode_mode() {
+        let mut state = sample_state();
+        state.focus = UiFocus::Messages;
+        state.message_view.cursor = Some(0);
+
+        // Test 'j' in Vscode mode
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.message_view.cursor, Some(1));
+
+        // Test 'k' in Vscode mode
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.message_view.cursor, Some(0));
+    }
+
+    #[test]
+    fn unified_search_key_works_in_vscode_mode() {
+        let mut state = sample_state();
+        state.focus = UiFocus::Messages;
+
+        // Test '/' in Vscode mode
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert!(state.message_view.search.is_open);
+        assert_eq!(state.focus, UiFocus::Search);
+    }
+
+    #[test]
+    fn unified_composer_focus_key_works_in_vscode_mode() {
+        let mut state = UiState::default();
+        state.focus = UiFocus::Chats;
+
+        // Test 'i' in Vscode mode
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.focus, UiFocus::Composer);
     }
 }

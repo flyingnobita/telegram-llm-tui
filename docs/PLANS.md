@@ -83,10 +83,10 @@ notifications.
    consistent keybindings/focus model, bottom key hints, and single-keystroke
    common flows.
 8. [x] (3.6) Implement Chat List Search (`/` key): filter chats by title.
-9. [ ] (3.7) Enable `j`/`k` navigation in all keymap styles (currently Vim-only).
-10. [ ] (3.8) Enable `/` (Search) in Messages in all keymap styles (currently
+9. [x] (3.7) Enable `j`/`k` navigation in all keymap styles (currently Vim-only).
+10. [x] (3.8) Enable `/` (Search) in Messages in all keymap styles (currently
     Vim-only).
-11. [ ] (3.9) Enable `i` (Focus Composer) in all keymap styles (currently
+11. [x] (3.9) Enable `i` (Focus Composer) in all keymap styles (currently
     Vim-only).
 
 ## 4 LLM workflow
