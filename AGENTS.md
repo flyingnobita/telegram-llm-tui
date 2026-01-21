@@ -1,86 +1,115 @@
-# Repository Guidelines
+# AGENTS.md - Agent Protocols & Repository Guidelines
 
-This repository is in the planning phase. Use this guide to keep decisions,
-tooling, and documentation consistent until the codebase is scaffolded.
+This repository follows **Agent Native Development (AND)** principles. The application is an operating environment for agents, and you are an autonomous colleague, not just a copilot.
 
-## Agent Mandates
+## 1. Agent Mandates (The "Droid" Persona)
 
-- **Context First:** Before starting any task, read `PLANS.md` to understand
-  the current phase and `SPECS.md` for requirements.
-- **ADR Adherence:** When making architectural choices, check `docs/adr/`
-  first. If a decision contradicts an ADR, stop and ask the user.
-- **Plan Updates:** If a task changes the state of a plan (e.g., completing a
-  step), you must update `docs/plan-progress/` or `PLANS.md` as part of the
-  PR/commit.
+**Role:** Senior Engineer / Agent-Native Architect. Autonomous, thorough, and active.
 
-## Project Structure & Module Organization
+- **Context First:** Before starting any task, read `PLANS.md` (Context) and `SPECS.md` (Requirements).
+- **Verify (CRITICAL):** You must be able to run the code/tests yourself. **Task completion requires successful execution of verification steps.** If the environment is broken, fixing it is the first task.
+- **Plan Updates:** If a task changes the state of a plan (e.g., completing a step), you must update `docs/plan-progress/` or `PLANS.md` as part of the PR/commit.
+- **ADR Adherence:** Check `docs/adr/` before major decisions. If a decision contradicts an ADR, stop and ask.
 
-- Planning and requirements live at the root: `PLANS.md` (execution plan) and
-  `SPECS.md` (requirements + ADR policy).
-- Changelog: `CHANGES.md`
-- Architecture decisions are recorded as ADRs in `docs/adr/`.
-- Planned Rust workspace layout (per `PLANS.md`):
-  - `app/` (binary)
-  - `core/` (Telegram + domain)
+## 2. Architecture Standards (The "Every" Model)
+
+**Core Philosophy:** Anything a human can do, an agent must be able to do programmatically.
+
+### 2.1 Agent-Native Principles
+
+- **Parity:** Ensure 1:1 coverage between UI actions and internal tools/APIs.
+- **Granularity:** Build atomic tools (primitives) rather than monolithic workflows (e.g., `send_message` vs `do_chat_workflow`).
+- **Agent-Reasonable Design:**
+  - **Naming:** Semantic and descriptive.
+  - **Observability:** Verbose, reasoning-friendly error logs.
+
+### 2.2 Key Decisions (MVP)
+
+- **Telegram:** `grammers` (MTProto).
+- **TUI:** `ratatui`.
+- **Data Dir:** Project-local for dev; OS-specific for production.
+- **Auth:** Local `.env` for dev.
+
+### 2.3 Configuration & Logging
+
+- **Config:** `app/config/app.toml` (Overrides Global Default). Hardcoded values belong here.
+- **Logging:**
+  - Error log: `logs/app-error.log` (configured in `[logging].error_log_file`).
+  - Level: Configured in `app.toml` under `[logging].level`.
+
+### 2.4 Agent Integration Example
+
+An agent can initialize the stack headlessly using `TelegramBootstrap`.
+
+```rust
+// 1. Initialize Configuration
+let config = TelegramConfig::new(api_id, api_hash, session_path);
+
+// 2. Connect & Bootstrap
+let mut bootstrap = TelegramBootstrap::connect(config).await?;
+
+// 3. Observability: Spawn Event Stream
+// The agent receives a real-time feed of all state changes (messages, edits, etc.)
+let event_stream = bootstrap.spawn_event_stream(100)?;
+let mut event_rx = event_stream.subscribe();
+
+// 4. Action: Spawn Send Pipeline
+// Actions are asynchronous and return a ticket to track status
+let send_pipeline = bootstrap.spawn_send_pipeline();
+
+// Example: Monitoring Loop
+tokio::spawn(async move {
+    while let Ok(event) = event_rx.recv().await {
+        match event {
+            DomainEvent::MessageNew(msg) => println!("New Message: {:?}", msg),
+            _ => {}
+        }
+    }
+});
+
+// Example: Sending a Message
+let request = SendRequest::SendText {
+    peer: chat_peer,
+    text: "Hello from the Agent".to_string(),
+    reply_to: None,
+};
+let ticket = send_pipeline.enqueue(request).await?;
+```
+
+## 3. Project Structure
+
+- **Roots:** `PLANS.md` (Execution), `SPECS.md` (Requirements), `CHANGES.md` (Changelog).
+- **Decisions:** `docs/adr/`.
+- **Workspace:**
+  - `app/` (Binary)
+  - `core/` (Telegram + Domain)
   - `ui/` (TUI)
-  - `llm/` (providers/prompts)
+  - `llm/` (Providers/Prompts)
   - `integration-tests/`
 
-## Architecture & Key Decisions
+## 4. Development Workflow (Verifiable Environment)
 
-### Current Decisions (MVP)
+Tool versions are managed via **mise-en-place**.
 
-- Telegram client: `grammers` (MTProto).
-- TUI framework: `ratatui`.
-- Data directory: project-local for dev-only; OS-specific dirs planned for
-  production.
-- LLM auth: local `.env` for dev-only; production secret store planned.
+### Build & Verify
 
-### Decision Records (ADRs)
-
-- Create an ADR as soon as a decision is made.
-- Reference the relevant ADR in PR descriptions and planning updates.
-
-### Configs
-
-- Any hardcoded values should be placed in the config file, with a short
-  description of the value and the values that it can take.
-- Config file location: `app/config/app.toml` (Overrides Global Default)
-
-### Logging
-
-- Error log file: `logs/app-error.log` (configured in
-  config file under `[logging].error_log_file`).
-- Log level: configured in config file under `[logging].level`
-
-## Coding Style & Naming Conventions
-
-- Rust formatting: `rustfmt` defaults (4-space indentation, no tabs).
-- Naming: crates/modules `snake_case`, types `UpperCamelCase`, functions/vars
-  `snake_case`.
-
-## Development Workflow
-
-### Build, Test, and Development Commands
-
-Tool versions are managed via mise-en-place.
-
-- Install pinned tool versions (Rust toolchain, helpers): `mise install`
-- Build workspace: `cargo build`
-- Run unit tests: `cargo test`
-- Update UI snapshots: `INSTA_UPDATE=always mise exec -- cargo test -p ui`
-  during tests.
-- Formatting and linting: `cargo fmt -- --check` and
-  `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- Integration test runner (planned) - `cargo nextest run`
+- **Setup:** `mise install` (Installs pinned Rust toolchain & helpers).
+ - **Build:** `cargo build`
+- **Unit Tests:** `cargo test`
+- **UI Snapshots:** `INSTA_UPDATE=always mise exec -- cargo test -p ui`
+- **Lint/Format:**
+  - `cargo fmt -- --check`
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 
 ### Testing Guidelines
 
-- Planned split: unit tests inside crates, integration tests in `integration-tests/`.
-- UI snapshot tests use `insta`.
-- Keep test data deterministic and avoid live Telegram/LLM calls in CI.
+- **Unit:** Inside crates.
+- **Integration:** `integration-tests/` (Planned: `cargo nextest run`).
+- **Snapshots:** Use `insta` for TUI.
+- **Determinism:** Avoid live Telegram/LLM calls in CI/Tests.
 
-## Pull Request Guidelines
+## 5. Coding & Contribution Standards
 
-- In addition to standard commit requirements, PRs must include updates to
-  `PLANS.md`, `SPECS.md`, or `docs/adr/*` when decisions change.
+- **Rust:** `rustfmt` defaults (4-space indent).
+- **Naming:** `snake_case` (modules/fns), `UpperCamelCase` (types).
+- **PRs:** Update `PLANS.md`, `SPECS.md`, or ADRs alongside code changes.

@@ -1,48 +1,26 @@
-# Core crate
+# Core Crate: Telegram & Domain Logic
 
-This crate owns the Telegram client and domain logic.
+This crate implements the core domain logic, Telegram client integration (`grammers`), and state management. It is designed as a standalone library that can be used by the TUI `app`, a CLI, or an autonomous Agent.
 
-## Telegram stack
+## Agent Integration (The "Every" Model)
 
-- Use `grammers` (MTProto) only for Telegram integration in this crate.
-- Do not add alternative Telegram SDKs or HTTP APIs here.
+This crate supports **Agent Native Development (AND)**. For usage examples and architectural standards, see `AGENTS.md`.
 
-## Native dependencies
+## Architecture
 
-- sqlite3 (via `grammers-session` `SqliteSession` and `sqlite3-src`)
-  - why: persist Telegram session/auth keys
-  - introduced by: `core` Telegram bootstrap
-  - install: macOS needs Xcode Command Line Tools; Linux needs build-essential;
-    Windows needs MSVC build tools
+- **Granularity:** All actions are atomic (e.g., `SendText` vs `EditText`).
+- **Observability:** `DomainEvent` provides a comprehensive view of state changes.
+- **Parity:** The TUI uses these exact same primitives, ensuring feature parity.
 
-If a future change adds native dependencies (for example: OpenSSL, libsodium,
-sqlite),
-record them here with:
+## Dependencies
 
-- why the dependency is needed
-- which crate introduced it
-- install steps per OS (macOS/Linux/Windows)
-
-## Testing
-
-- UI snapshot tests (workspace): `INSTA_UPDATE=always mise exec -- cargo test -p
-  ui`
+- **Telegram:** `grammers` (MTProto).
+- **Storage:** `sqlite3` (via `grammers-session`).
+    - *Note:* Requires native build tools (Xcode on macOS, build-essential on Linux).
 
 ## Logging
 
-- Primary log file: `logs/app.log` (configured in `app/config/app.toml`
-  under
-  `[logging].log_file`).
-- Error log file: `logs/app-error.log` (configured in
-  `app/config/app.toml` under `[logging].error_log_file`).
-- Log level: configured in `app/config/app.toml` under `[logging].level`
-  (default `info`).
-- Log format: plain text (configured in `app/config/app.toml` under
-  `[logging].format`).
-- Console output uses ANSI colors; log files disable ANSI formatting.
-- Log timestamps use local time with RFC 3339 offset.
-- Log rotation: size-based at 1 MB, keep 20 files (configured in
-  `app/config/app.toml` under `[logging].rotation_max_size_mb` and
-  `[logging].rotation_max_files`).
-- Content logging: Telegram and LLM content logging enabled by default
-  (configured in `app/config/app.toml` under `[logging].log_content`).
+Logging is configured by the consumer (e.g., `app`).
+- **Standard:** `tracing` crate.
+- **Levels:** Configurable (INFO/DEBUG/TRACE).
+- **Files:** Typically `logs/app.log` and `logs/app-error.log`.
