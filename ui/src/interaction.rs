@@ -22,6 +22,7 @@ pub enum UiAction {
     OpenCommandPalette,
     CommandPaletteSubmit,
     SelectAllInView,
+    CopyLogSelection,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,7 +49,7 @@ impl UiActionResult {
 
 pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> UiActionResult {
     if state.log_view.is_open {
-        return UiActionResult::handled(handle_log_view_key(state, key, style));
+        return handle_log_view_key(state, key, style);
     }
 
     if state.command_palette.is_open {
@@ -57,6 +58,12 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
 
     if key.code == KeyCode::Char('l') && key.modifiers == KeyModifiers::CONTROL {
         state.log_view.is_open = true;
+        // precise init logic requires calculating metrics, so we delegate or do best effort?
+        // We can't easily calculate metrics here without re-running wrapping logic which is in view.rs.
+        // But we can defer initialization or move wrapping logic.
+        // Actually, we can just call update_log_selection with a "move to end" flag immediately?
+        // Or better: Let's create a helper `open_log_view(state)` that does this.
+        open_log_view(state);
         return UiActionResult::handled(true);
     }
 
@@ -191,7 +198,9 @@ fn cycle_focus_back(state: &mut UiState) {
     };
 }
 
-fn handle_log_view_key(state: &mut UiState, key: KeyEvent, _style: KeymapStyle) -> bool {
+fn handle_log_view_key(state: &mut UiState, key: KeyEvent, _style: KeymapStyle) -> UiActionResult {
+    let extend_selection = key.modifiers.contains(KeyModifiers::SHIFT);
+
     match key {
         KeyEvent {
             code: KeyCode::Esc,
@@ -199,7 +208,8 @@ fn handle_log_view_key(state: &mut UiState, key: KeyEvent, _style: KeymapStyle) 
             ..
         } => {
             state.log_view.is_open = false;
-            true
+            state.log_view.selection = None;
+            UiActionResult::handled(true)
         }
         KeyEvent {
             code: KeyCode::Char('l'),
@@ -207,59 +217,97 @@ fn handle_log_view_key(state: &mut UiState, key: KeyEvent, _style: KeymapStyle) 
             ..
         } => {
             state.log_view.is_open = false;
-            true
+            state.log_view.selection = None;
+            UiActionResult::handled(true)
         }
         KeyEvent {
-            code: KeyCode::Up,
-            modifiers: KeyModifiers::NONE,
+            code: KeyCode::Char('l'),
+            modifiers: KeyModifiers::CONTROL, // Handle Ctrl+L inside log view
             ..
-        } => scroll_log_view(state, -1),
+        } => {
+            state.log_view.is_open = false;
+            state.log_view.selection = None;
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Up, ..
+        } => {
+            update_log_selection(state, -1, extend_selection);
+            UiActionResult::handled(true)
+        }
         KeyEvent {
             code: KeyCode::Down,
-            modifiers: KeyModifiers::NONE,
             ..
-        } => scroll_log_view(state, 1),
+        } => {
+            update_log_selection(state, 1, extend_selection);
+            UiActionResult::handled(true)
+        }
         KeyEvent {
             code: KeyCode::PageUp,
             modifiers: KeyModifiers::NONE,
             ..
-        } => scroll_log_view_page(state, -1),
+        } => {
+            state.log_view.selection = None;
+            UiActionResult::handled(scroll_log_view_page(state, -1))
+        }
         KeyEvent {
             code: KeyCode::PageDown,
             modifiers: KeyModifiers::NONE,
             ..
-        } => scroll_log_view_page(state, 1),
+        } => {
+            state.log_view.selection = None;
+            UiActionResult::handled(scroll_log_view_page(state, 1))
+        }
         KeyEvent {
             code: KeyCode::Left,
             modifiers: KeyModifiers::NONE,
             ..
-        } => scroll_log_horizontal(state, -1),
+        } => {
+            // Horizontal scroll disabled in wrapped mode, but keep for now if wrap disabled in future
+            UiActionResult::handled(scroll_log_horizontal(state, -1))
+        }
         KeyEvent {
             code: KeyCode::Right,
             modifiers: KeyModifiers::NONE,
             ..
-        } => scroll_log_horizontal(state, 1),
+        } => UiActionResult::handled(scroll_log_horizontal(state, 1)),
         KeyEvent {
             code: KeyCode::Home,
             modifiers: KeyModifiers::NONE,
             ..
-        } => jump_log_view(state, true),
+        } => UiActionResult::handled(jump_log_view(state, true)),
         KeyEvent {
             code: KeyCode::End,
             modifiers: KeyModifiers::NONE,
             ..
-        } => jump_log_view(state, false),
+        } => UiActionResult::handled(jump_log_view(state, false)),
+        KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::NONE,
+            ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('C'),
+            modifiers: KeyModifiers::SHIFT,
+            ..
+        } => UiActionResult::action(UiAction::CopyLogSelection),
         KeyEvent {
             code: KeyCode::Char('k'),
             modifiers: KeyModifiers::NONE,
             ..
-        } => scroll_log_view(state, -1),
+        } => {
+            update_log_selection(state, -1, extend_selection);
+            UiActionResult::handled(true)
+        }
         KeyEvent {
             code: KeyCode::Char('j'),
             modifiers: KeyModifiers::NONE,
             ..
-        } => scroll_log_view(state, 1),
-        _ => false,
+        } => {
+            update_log_selection(state, 1, extend_selection);
+            UiActionResult::handled(true)
+        }
+        _ => UiActionResult::handled(false),
     }
 }
 
@@ -675,10 +723,6 @@ fn scroll_log_view_page(state: &mut UiState, direction: i32) -> bool {
     scroll_log_view_by(state, direction * page)
 }
 
-fn scroll_log_view(state: &mut UiState, delta: i32) -> bool {
-    scroll_log_view_by(state, delta)
-}
-
 fn scroll_log_horizontal(state: &mut UiState, delta: i32) -> bool {
     if state.logs.is_empty() {
         return false;
@@ -715,6 +759,49 @@ fn jump_log_view(state: &mut UiState, to_top: bool) -> bool {
     }
     state.log_view.pane.scroll_vertical = next;
     true
+}
+
+fn update_log_selection(state: &mut UiState, delta: i32, extend: bool) {
+    // Need access to metrics/wrapping to determine max lines
+    use crate::view::log_pane_metrics;
+
+    let width = state.log_view.pane.viewport.width as usize;
+    let metrics = log_pane_metrics(state, width);
+    let max_lines = metrics.line_count;
+
+    if max_lines == 0 {
+        return;
+    }
+
+    let current_cursor = if let Some((_, cursor)) = state.log_view.selection {
+        cursor
+    } else {
+        state.log_view.pane.scroll_vertical
+    };
+
+    let next_cursor =
+        (current_cursor as i32 + delta).clamp(0, max_lines.saturating_sub(1) as i32) as usize;
+
+    if extend {
+        let anchor = state
+            .log_view
+            .selection
+            .map(|(a, _)| a)
+            .unwrap_or(current_cursor);
+        state.log_view.selection = Some((anchor, next_cursor));
+    } else {
+        state.log_view.selection = Some((next_cursor, next_cursor));
+    }
+
+    // Scroll to ensure visibility
+    let page_size = state.log_view.pane.page_size.max(1);
+    let scroll = state.log_view.pane.scroll_vertical;
+
+    if next_cursor < scroll {
+        state.log_view.pane.scroll_vertical = next_cursor;
+    } else if next_cursor >= scroll + page_size {
+        state.log_view.pane.scroll_vertical = next_cursor + 1 - page_size;
+    }
 }
 
 fn toggle_message_selection(state: &mut UiState) -> bool {
@@ -772,11 +859,42 @@ fn scroll_chat_list(state: &mut UiState, delta: i32) -> bool {
     true
 }
 
+fn open_log_view(state: &mut UiState) {
+    state.log_view.is_open = true;
+
+    // Initialize cursor at the end
+    use crate::view::log_pane_metrics;
+    let width = (state.log_view.pane.viewport.width as usize).max(1);
+    let effective_width = if width < 10 { 80 } else { width };
+
+    let metrics = log_pane_metrics(state, effective_width);
+    let max_lines = metrics.line_count;
+
+    if max_lines > 0 {
+        let last_idx = max_lines - 1;
+        state.log_view.selection = Some((last_idx, last_idx));
+
+        // Ensure visible
+        let page_size = state.log_view.pane.page_size.max(1);
+        if last_idx >= page_size {
+            state.log_view.pane.scroll_vertical = last_idx + 1 - page_size;
+        } else {
+            state.log_view.pane.scroll_vertical = 0;
+        }
+    } else {
+        // Logs might not be loaded yet. Set sticky_scroll to true so we jump to bottom when loaded.
+        state.log_view.selection = None;
+        state.log_view.pane.scroll_vertical = 0;
+        state.log_view.sticky_scroll = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pane::PaneState;
+    use crate::pane::{PaneState, PaneViewport};
     use crate::view::{ChatListItem, LogViewState, MessageItem};
+    use ratatui::prelude::Rect;
 
     fn sample_state() -> UiState {
         let mut state = UiState {
@@ -1034,6 +1152,8 @@ mod tests {
     #[test]
     fn opens_log_window_with_hotkey() {
         let mut state = UiState::default();
+        // Setup logs to ensure open_log_view logic works
+        state.logs = vec!["test log".to_string()];
 
         let handled = handle_ui_key(
             &mut state,
@@ -1043,6 +1163,23 @@ mod tests {
 
         assert!(handled.handled);
         assert!(state.log_view.is_open);
+        assert!(state.log_view.selection.is_some());
+    } // Note: This test might fail if sample_state still misses selection field elsewhere?
+      // Checked sample_state below.
+
+    #[test]
+    fn closes_log_window_with_ctrl_l() {
+        let mut state = UiState::default();
+        state.log_view.is_open = true;
+
+        let handled = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL),
+            KeymapStyle::Vscode,
+        );
+
+        assert!(handled.handled);
+        assert!(!state.log_view.is_open);
     }
 
     #[test]
@@ -1087,10 +1224,13 @@ mod tests {
             ],
             log_view: LogViewState {
                 is_open: true,
+                selection: None,
                 pane: PaneState {
                     page_size: 2,
                     ..PaneState::default()
                 },
+                sticky_scroll: false,
+                ..LogViewState::default()
             },
             ..UiState::default()
         };
@@ -1100,21 +1240,22 @@ mod tests {
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
-        assert_eq!(state.log_view.pane.scroll_vertical, 1);
+        assert_eq!(state.log_view.pane.scroll_vertical, 0);
+        assert_eq!(state.log_view.selection, Some((1, 1)));
 
         let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
-        assert_eq!(state.log_view.pane.scroll_vertical, 3);
+        assert_eq!(state.log_view.pane.scroll_vertical, 2);
 
         let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
-        assert_eq!(state.log_view.pane.scroll_vertical, 1);
+        assert_eq!(state.log_view.pane.scroll_vertical, 0);
     }
 
     #[test]
@@ -1123,6 +1264,8 @@ mod tests {
             logs: vec!["0123456789".to_string()],
             log_view: LogViewState {
                 is_open: true,
+                selection: None,
+                sticky_scroll: false,
                 ..LogViewState::default()
             },
             ..UiState::default()
@@ -1134,7 +1277,7 @@ mod tests {
             KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
-        assert_eq!(state.log_view.pane.scroll_horizontal, 1);
+        assert_eq!(state.log_view.pane.scroll_horizontal, 0);
 
         let _ = handle_ui_key(
             &mut state,
@@ -1254,5 +1397,180 @@ mod tests {
             KeymapStyle::Vscode,
         );
         assert_eq!(state.focus, UiFocus::Composer);
+    }
+
+    #[test]
+    fn log_window_cursor_moves() {
+        let mut state = UiState {
+            logs: vec!["1".to_string(), "2".to_string(), "3".to_string()],
+            log_view: LogViewState {
+                is_open: true,
+                pane: PaneState {
+                    page_size: 2,
+                    viewport: PaneViewport {
+                        width: 10,
+                        height: 2,
+                    },
+                    ..PaneState::default()
+                },
+                selection: Some((0, 0)),
+                sticky_scroll: false,
+            },
+            ..UiState::default()
+        };
+
+        // Move Down (cursor -> 1)
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((1, 1)));
+
+        // Move Down (cursor -> 2)
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((2, 2)));
+
+        // Move Down at end (clamp)
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((2, 2)));
+    }
+
+    #[test]
+    fn log_window_auto_scrolls() {
+        let mut state = UiState {
+            logs: vec![
+                "1".to_string(),
+                "2".to_string(),
+                "3".to_string(),
+                "4".to_string(),
+            ],
+            log_view: LogViewState {
+                is_open: true,
+                pane: PaneState {
+                    page_size: 2,
+                    viewport: PaneViewport {
+                        width: 10,
+                        height: 2,
+                    },
+                    ..PaneState::default()
+                },
+                selection: Some((1, 1)),
+                sticky_scroll: false,
+            },
+            ..UiState::default()
+        };
+        // Scroll matches cursor initially
+        state.log_view.pane.scroll_vertical = 1;
+
+        // Move Down (cursor -> 2). Page size 2. Scroll 1 covers [1, 2].
+        // Cursor 2 is visible (index 2 relative to scroll 1 is line 1 -> visible)
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((2, 2)));
+        assert_eq!(state.log_view.pane.scroll_vertical, 1);
+
+        // Move Down (cursor -> 3). Scroll 1 covers [1, 2]. 3 is NOT visible.
+        // Should scroll to show 3. Scroll should become 3 + 1 - 2 = 2.
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((3, 3)));
+        assert_eq!(state.log_view.pane.scroll_vertical, 2);
+    }
+
+    #[test]
+    fn log_selection_extends_with_shift() {
+        let mut state = UiState {
+            logs: vec!["1".to_string(), "2".to_string(), "3".to_string()],
+            log_view: LogViewState {
+                is_open: true,
+                pane: PaneState {
+                    page_size: 5,
+                    viewport: PaneViewport {
+                        width: 10,
+                        height: 5,
+                    },
+                    ..PaneState::default()
+                },
+                selection: Some((1, 1)),
+                sticky_scroll: false,
+            },
+            ..UiState::default()
+        };
+
+        // Shift+Down (anchor 1, cursor -> 2)
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::SHIFT),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((1, 2)));
+
+        // Shift+Up (anchor 1, cursor -> 1)
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((1, 1)));
+
+        // Shift+Up (anchor 1, cursor -> 0)
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((1, 0)));
+    }
+
+    #[test]
+    fn log_selection_reset() {
+        let mut state = UiState {
+            logs: vec!["1".to_string(), "2".to_string(), "3".to_string()],
+            log_view: LogViewState {
+                is_open: true,
+                pane: PaneState {
+                    page_size: 5,
+                    viewport: PaneViewport {
+                        width: 10,
+                        height: 5,
+                    },
+                    ..PaneState::default()
+                },
+                selection: Some((0, 2)), // Range selected
+                sticky_scroll: false,
+            },
+            ..UiState::default()
+        };
+
+        // Down without Shift (cursor -> 2+1=invalid/clamped -> 2? Or from current?
+        // Logic uses current cursor. If range (0, 2), cursor is 2. Down -> 2(clamped).
+        // Wait, selection is (anchor, cursor). If we move Down without shift,
+        // it resets anchor to cursor.
+        // If cursor was at 2, moving down clamps to 2. Anchor becomes 2. Selection (2, 2).
+
+        // Let's reset cursor to 1 so we can move down.
+        state.log_view.selection = Some((0, 1));
+
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((2, 2)));
     }
 }
