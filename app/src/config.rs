@@ -33,6 +33,10 @@ const DEFAULT_LOG_CONTENT: bool = true;
 const DEFAULT_KEYMAP_STYLE: KeymapStyle = KeymapStyle::Vscode;
 const DEFAULT_CHAT_LIST_WIDTH: u16 = 32;
 const DEFAULT_LOG_WINDOW_MAX_LINES: usize = 500;
+const DEFAULT_LLM_ENABLED: bool = false;
+const DEFAULT_LLM_PROVIDER: &str = "mock";
+const DEFAULT_LM_STUDIO_BASE_URL: &str = "http://localhost:1234";
+const DEFAULT_LM_STUDIO_MODEL: &str = "gpt-3.5-turbo";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
@@ -63,6 +67,20 @@ pub struct AppConfig {
     pub keymap_style: KeymapStyle,
     pub chat_list_width: u16,
     pub log_window_max_lines: usize,
+    pub llm: LlmConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlmConfig {
+    pub enabled: bool,
+    pub provider: String,
+    pub lm_studio: LmStudioConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LmStudioConfig {
+    pub base_url: String,
+    pub model: String,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -103,6 +121,7 @@ struct FileConfig {
     logging: Option<LoggingSection>,
     telegram: Option<TelegramSection>,
     ui: Option<UiSection>,
+    llm: Option<LlmSection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,6 +166,19 @@ struct UiSection {
     keymap: Option<String>,
     chat_list_width: Option<u16>,
     log_window_max_lines: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LlmSection {
+    enabled: Option<bool>,
+    provider: Option<String>,
+    lm_studio: Option<LmStudioSection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LmStudioSection {
+    base_url: Option<String>,
+    model: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -381,6 +413,41 @@ impl AppConfig {
             .unwrap_or(DEFAULT_LOG_WINDOW_MAX_LINES);
         let log_window_max_lines = normalize_log_window_max_lines(log_window_max_lines);
 
+        let llm_enabled = file_config
+            .as_ref()
+            .and_then(|config| config.llm.as_ref())
+            .and_then(|llm| llm.enabled)
+            .unwrap_or(DEFAULT_LLM_ENABLED);
+
+        let llm_provider = file_config
+            .as_ref()
+            .and_then(|config| config.llm.as_ref())
+            .and_then(|llm| llm.provider.clone())
+            .unwrap_or_else(|| DEFAULT_LLM_PROVIDER.to_string());
+
+        let llm_lm_studio_base_url = file_config
+            .as_ref()
+            .and_then(|config| config.llm.as_ref())
+            .and_then(|llm| llm.lm_studio.as_ref())
+            .and_then(|lms| lms.base_url.clone())
+            .unwrap_or_else(|| DEFAULT_LM_STUDIO_BASE_URL.to_string());
+
+        let llm_lm_studio_model = file_config
+            .as_ref()
+            .and_then(|config| config.llm.as_ref())
+            .and_then(|llm| llm.lm_studio.as_ref())
+            .and_then(|lms| lms.model.clone())
+            .unwrap_or_else(|| DEFAULT_LM_STUDIO_MODEL.to_string());
+
+        let llm = LlmConfig {
+            enabled: llm_enabled,
+            provider: llm_provider,
+            lm_studio: LmStudioConfig {
+                base_url: llm_lm_studio_base_url,
+                model: llm_lm_studio_model,
+            },
+        };
+
         Ok(Self {
             api_id,
             api_hash,
@@ -409,6 +476,7 @@ impl AppConfig {
             keymap_style,
             chat_list_width,
             log_window_max_lines,
+            llm,
         })
     }
 

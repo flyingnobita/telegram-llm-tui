@@ -30,6 +30,8 @@ use crate::config::{AppConfig, LogFormat, LogRotation};
 use crate::prompt::{prompt_line, prompt_secret, AuthMethod};
 use crate::tui::run_tui_loop;
 use crate::ui_state::UiCacheBridge;
+use llm::openai::OpenAiProvider;
+use llm::{LlmProvider, MockProvider};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -152,6 +154,30 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
+    let llm_provider: Arc<dyn LlmProvider> = if config.llm.enabled {
+        match config.llm.provider.as_str() {
+            "lm_studio" => {
+                let base_url = config.llm.lm_studio.base_url.clone();
+                let model = config.llm.lm_studio.model.clone();
+                match OpenAiProvider::new(base_url, model) {
+                    Ok(provider) => Arc::new(provider),
+                    Err(err) => {
+                        warn!(%err, "failed to initialize lm_studio provider, falling back to mock");
+                        Arc::new(MockProvider)
+                    }
+                }
+            }
+            "openai" => {
+                // TODO: Implement OpenAI specific config (api_key, etc)
+                warn!("openai provider not configured or implemented yet");
+                Arc::new(MockProvider)
+            }
+            _ => Arc::new(MockProvider),
+        }
+    } else {
+        Arc::new(MockProvider)
+    };
+
     run_tui_loop(
         cache_manager.as_ref(),
         &mut ui_bridge,
@@ -162,6 +188,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         console_gate.clone(),
         config.log_file_path.clone(),
         config.log_window_max_lines,
+        llm_provider,
     )
     .await?;
 

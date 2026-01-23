@@ -21,7 +21,11 @@ pub enum LlmError {
     Provider(String),
     #[error("network error: {0}")]
     Network(String),
+    #[error("configuration error: {0}")]
+    Configuration(String),
 }
+
+pub mod openai;
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
