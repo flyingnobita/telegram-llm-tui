@@ -304,8 +304,8 @@ fn handle_export_selected(
 
     tokio::spawn(async move {
         let request = LlmRequest {
-            system_prompt: "You are a helpful assistant.".to_string(),
-            user_instruction: "Draft a reply to this conversation.".to_string(),
+            system_prompt: "You are a helpful assistant. Write a draft reply for the user based on the transcript. Keep it concise and natural.".to_string(),
+            user_instruction: "Draft a reply to this conversation. Return ONLY the reply text, no preamble.".to_string(),
             transcript,
         };
 

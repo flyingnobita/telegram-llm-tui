@@ -54,7 +54,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cache_store = Arc::new(SqliteCacheStore::new(config.cache_db_path.clone()));
     let cache_manager = Arc::new(CacheManager::spawn(cache_store, config.cache_config()).await?);
-    let mut ui_bridge = UiCacheBridge::new(None, config.chat_list_width);
+    let mut ui_bridge = UiCacheBridge::new(
+        None,
+        config.chat_list_width,
+        config.llm.openai.api_key.clone(),
+        config.llm.openai.model.clone(),
+    );
     ui_bridge.refresh(cache_manager.as_ref());
 
     let mut telegram_config = TelegramConfig::new(
@@ -159,18 +164,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             "lm_studio" => {
                 let base_url = config.llm.lm_studio.base_url.clone();
                 let model = config.llm.lm_studio.model.clone();
-                match OpenAiProvider::new(base_url, model) {
-                    Ok(provider) => Arc::new(provider),
-                    Err(err) => {
-                        warn!(%err, "failed to initialize lm_studio provider, falling back to mock");
-                        Arc::new(MockProvider)
-                    }
-                }
+                Arc::new(OpenAiProvider::new(Some(base_url), None, model))
             }
             "openai" => {
-                // TODO: Implement OpenAI specific config (api_key, etc)
-                warn!("openai provider not configured or implemented yet");
-                Arc::new(MockProvider)
+                let api_key = config.llm.openai.api_key.clone();
+                let model = config.llm.openai.model.clone();
+                Arc::new(OpenAiProvider::new(None, api_key, model))
             }
             _ => Arc::new(MockProvider),
         }

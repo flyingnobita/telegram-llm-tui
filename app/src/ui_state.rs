@@ -13,10 +13,17 @@ pub struct UiCacheBridge {
     selected_chat: Option<ChatId>,
     message_limit: Option<usize>,
     chat_peers: HashMap<ChatId, PeerRef>,
+    pub openai_api_key: Option<String>,
+    pub llm_model: String,
 }
 
 impl UiCacheBridge {
-    pub fn new(message_limit: Option<usize>, chat_list_width: u16) -> Self {
+    pub fn new(
+        message_limit: Option<usize>,
+        chat_list_width: u16,
+        openai_api_key: Option<String>,
+        llm_model: String,
+    ) -> Self {
         let state = UiState {
             chat_list_width,
             ..UiState::default()
@@ -26,6 +33,8 @@ impl UiCacheBridge {
             selected_chat: None,
             message_limit,
             chat_peers: HashMap::new(),
+            openai_api_key,
+            llm_model,
         }
     }
 
@@ -281,7 +290,7 @@ mod tests {
         manager.upsert_chat(chat_summary(1, "General", 100));
         manager.upsert_chat(chat_summary(2, "Product", 300));
 
-        let mut bridge = UiCacheBridge::new(None, 32);
+        let mut bridge = UiCacheBridge::new(None, 32, None, "test".to_string());
         let selected = bridge.refresh(&manager);
 
         assert_eq!(selected, Some(ChatId(2)));
@@ -306,7 +315,7 @@ mod tests {
         manager.apply_event(&DomainEvent::MessageNew(message_new(2, 1, 60, true)));
         manager.apply_event(&DomainEvent::MessageNew(message_new(2, 2, 120, false)));
 
-        let mut bridge = UiCacheBridge::new(None, 32);
+        let mut bridge = UiCacheBridge::new(None, 32, None, "test".to_string());
         bridge.set_selected_chat(Some(ChatId(2)));
         bridge.refresh(&manager);
 
@@ -335,7 +344,7 @@ mod tests {
             display_name: "Ada Lovelace".to_string(),
         });
 
-        let mut bridge = UiCacheBridge::new(None, 32);
+        let mut bridge = UiCacheBridge::new(None, 32, None, "test".to_string());
         bridge.set_selected_chat(Some(ChatId(1)));
         bridge.refresh(&manager);
 
@@ -363,7 +372,7 @@ mod tests {
             outgoing: false,
         }));
 
-        let mut bridge = UiCacheBridge::new(None, 32);
+        let mut bridge = UiCacheBridge::new(None, 32, None, "test".to_string());
         bridge.set_selected_chat(Some(ChatId(1)));
         bridge.refresh(&manager);
 
@@ -375,7 +384,7 @@ mod tests {
 
     #[test]
     fn sync_selected_chat_from_state_updates_selection() {
-        let mut bridge = UiCacheBridge::new(None, 32);
+        let mut bridge = UiCacheBridge::new(None, 32, None, "test".to_string());
         bridge.state.chats = vec![
             ChatListItem {
                 id: 10,
@@ -399,7 +408,7 @@ mod tests {
 
     #[test]
     fn sync_selected_chat_from_state_no_change() {
-        let mut bridge = UiCacheBridge::new(None, 32);
+        let mut bridge = UiCacheBridge::new(None, 32, None, "test".to_string());
         bridge.state.chats = vec![ChatListItem {
             id: 10,
             title: "General".to_string(),
@@ -425,7 +434,7 @@ mod tests {
         manager.upsert_chat(chat_summary(2, "Product", 200));
         manager.upsert_chat(chat_summary(3, "Design", 300));
 
-        let mut bridge = UiCacheBridge::new(None, 32);
+        let mut bridge = UiCacheBridge::new(None, 32, None, "test".to_string());
 
         // No filter
         bridge.refresh(&manager);

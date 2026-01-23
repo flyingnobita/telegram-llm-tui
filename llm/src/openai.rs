@@ -1,124 +1,75 @@
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use url::Url;
-
 use crate::{LlmError, LlmProvider, LlmRequest, LlmResponse};
+use async_openai::{
+    config::OpenAIConfig,
+    types::{
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
+        ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
+    },
+    Client,
+};
+use async_trait::async_trait;
 
-#[derive(Debug, Clone)]
 pub struct OpenAiProvider {
-    client: Client,
-    base_url: Url,
+    client: Client<OpenAIConfig>,
     model: String,
 }
 
 impl OpenAiProvider {
-    pub fn new(base_url: String, model: String) -> Result<Self, LlmError> {
-        let base_url = Url::parse(&base_url).map_err(|e| LlmError::Configuration(e.to_string()))?;
-        Ok(Self {
-            client: Client::new(),
-            base_url,
-            model,
-        })
+    pub fn new(base_url: Option<String>, api_key: Option<String>, model: String) -> Self {
+        let mut config = OpenAIConfig::new();
+
+        if let Some(url) = base_url {
+            config = config.with_api_base(url);
+        }
+
+        if let Some(key) = api_key {
+            config = config.with_api_key(key);
+        } else {
+            // Provide dummy key if none exists (e.g. for local LM Studio)
+            config = config.with_api_key("dummy");
+        }
+
+        let client = Client::with_config(config);
+        Self { client, model }
     }
-}
-
-#[derive(Serialize)]
-struct CompletionRequest {
-    model: String,
-    messages: Vec<Message>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Message {
-    role: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct CompletionResponse {
-    choices: Vec<Choice>,
-}
-
-#[derive(Deserialize)]
-struct Choice {
-    message: Message,
 }
 
 #[async_trait]
 impl LlmProvider for OpenAiProvider {
     async fn generate_draft(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
-        // Prepare the endpoint URL.
-        // We assume the user configures a base_url like "http://localhost:1234" or "http://localhost:1234/v1".
-        // If it ends in /v1 (or /v1/), we append "chat/completions".
-        // Otherwise we append "v1/chat/completions".
-        // We must ensure the base URL has a trailing slash for Url::join to work as expected (appending instead of replacing).
+        let system_msg = ChatCompletionRequestSystemMessageArgs::default()
+            .content(request.system_prompt.as_str())
+            .build()
+            .map_err(|e| LlmError::Provider(format!("failed to build system prompt: {}", e)))?;
 
-        let path = self.base_url.path();
-        let endpoint_suffix = if path.ends_with("/v1") || path.ends_with("/v1/") {
-            "chat/completions"
-        } else {
-            "v1/chat/completions"
-        };
-
-        // Ensure base_url ends with slash for correct joining
-        let mut base = self.base_url.clone();
-        if !base.path().ends_with('/') {
-            base.set_path(&format!("{}/", base.path()));
-        }
-
-        let url = base
-            .join(endpoint_suffix)
-            .map_err(|e| LlmError::Configuration(e.to_string()))?;
-
-        // Construct messages
-        let prompt = format!(
+        let user_content = format!(
             "{}\n\nTranscript:\n{}",
             request.user_instruction, request.transcript
         );
+        let user_msg = ChatCompletionRequestUserMessageArgs::default()
+            .content(user_content)
+            .build()
+            .map_err(|e| LlmError::Provider(format!("failed to build user prompt: {}", e)))?;
 
-        let messages = vec![
-            Message {
-                role: "system".to_string(),
-                content: request.system_prompt,
-            },
-            Message {
-                role: "user".to_string(),
-                content: prompt,
-            },
-        ];
+        let messages: Vec<ChatCompletionRequestMessage> = vec![system_msg.into(), user_msg.into()];
 
-        let req_body = CompletionRequest {
-            model: self.model.clone(),
-            messages,
-        };
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages(messages)
+            .build()
+            .map_err(|e| LlmError::Provider(format!("failed to build request: {}", e)))?;
 
-        let res = self
+        let response = self
             .client
-            .post(url)
-            .json(&req_body)
-            .send()
+            .chat()
+            .create(request)
             .await
-            .map_err(|e| LlmError::Network(e.to_string()))?;
+            .map_err(|e| LlmError::Network(format!("openai api error: {}", e)))?;
 
-        if !res.status().is_success() {
-            let status = res.status();
-            let text = res.text().await.unwrap_or_default();
-            return Err(LlmError::Provider(format!(
-                "Status: {}, Body: {}",
-                status, text
-            )));
-        }
-
-        let response_body: CompletionResponse = res
-            .json()
-            .await
-            .map_err(|e| LlmError::Network(e.to_string()))?;
-
-        let text = response_body
+        let text = response
             .choices
             .first()
-            .map(|c| c.message.content.clone())
+            .and_then(|c| c.message.content.clone())
             .unwrap_or_default();
 
         Ok(LlmResponse { text })
