@@ -8,7 +8,7 @@ use tracing::{info, warn};
 
 use crate::command::UiCommand;
 use crate::llm_workflow::format_transcript;
-use crate::ui_state::UiCacheBridge;
+use ui::bridge::UiCacheBridge;
 
 pub fn handle_export_selected(
     ui_bridge: &mut UiCacheBridge,

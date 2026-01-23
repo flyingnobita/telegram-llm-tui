@@ -29,10 +29,10 @@ use ui::view::{
 };
 
 use crate::command::UiCommand;
-use crate::ui_state::UiCacheBridge;
 use crate::ConsoleLogGate;
 use llm::kits;
 use llm::LlmProvider;
+use ui::bridge::UiCacheBridge;
 
 const DRAW_INTERVAL_MS: u64 = 250;
 const INPUT_POLL_MS: u64 = 100;

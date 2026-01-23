@@ -5,7 +5,6 @@ mod config;
 mod llm_workflow;
 mod prompt;
 mod tui;
-mod ui_state;
 
 use clap::Parser;
 
@@ -33,9 +32,9 @@ use tracing_subscriber::Layer;
 use crate::config::{AppConfig, LogFormat, LogRotation};
 use crate::prompt::{prompt_line, prompt_secret, AuthMethod};
 use crate::tui::run_tui_loop;
-use crate::ui_state::UiCacheBridge;
 use llm::openai::OpenAiProvider;
 use llm::{LlmProvider, MockProvider};
+use ui::bridge::UiCacheBridge;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

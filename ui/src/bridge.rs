@@ -1,11 +1,11 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
+use crate::view::{ChatListItem, MessageItem, UiState};
 use telegram_llm_core::telegram::{
     AuthorId, CacheManager, CachedMessage, ChatId, ChatSummary, DialogSnapshot, PeerRef, UserId,
 };
-use time::{format_description, OffsetDateTime};
-use ui::view::{ChatListItem, MessageItem, UiState};
+use time::{format_description, OffsetDateTime, UtcOffset};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -212,11 +212,16 @@ fn format_timestamp(timestamp: i64) -> String {
         Ok(format) => format,
         Err(_) => return timestamp.to_string(),
     };
-    let date_time = match OffsetDateTime::from_unix_timestamp(timestamp) {
+    let date_time_utc = match OffsetDateTime::from_unix_timestamp(timestamp) {
         Ok(date_time) => date_time,
         Err(_) => return timestamp.to_string(),
     };
-    date_time
+    let date_time_local = if let Ok(offset) = UtcOffset::current_local_offset() {
+        date_time_utc.to_offset(offset)
+    } else {
+        date_time_utc
+    };
+    date_time_local
         .format(&format)
         .unwrap_or_else(|_| timestamp.to_string())
 }
@@ -325,10 +330,10 @@ mod tests {
         assert_eq!(bridge.state.messages.len(), 2);
         assert_eq!(bridge.state.messages[0].id, 1);
         assert_eq!(bridge.state.messages[0].author, "You");
-        assert_eq!(bridge.state.messages[0].timestamp, "00:01");
+        assert_eq!(bridge.state.messages[0].timestamp, format_timestamp(60));
         assert_eq!(bridge.state.messages[1].id, 2);
         assert_eq!(bridge.state.messages[1].author, "User 42");
-        assert_eq!(bridge.state.messages[1].timestamp, "00:02");
+        assert_eq!(bridge.state.messages[1].timestamp, format_timestamp(120));
 
         manager.shutdown().await;
     }
