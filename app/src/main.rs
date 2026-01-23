@@ -52,7 +52,12 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cache_store = Arc::new(SqliteCacheStore::new(config.cache_db_path.clone()));
     let cache_manager = Arc::new(CacheManager::spawn(cache_store, config.cache_config()).await?);
-    let mut ui_bridge = UiCacheBridge::new(None, config.chat_list_width);
+    let mut ui_bridge = UiCacheBridge::new(
+        None,
+        config.chat_list_width,
+        config.openai_api_key.clone(),
+        config.llm_model.clone(),
+    );
     ui_bridge.refresh(cache_manager.as_ref());
 
     let mut telegram_config = TelegramConfig::new(
