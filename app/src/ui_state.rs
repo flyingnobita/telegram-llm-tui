@@ -8,6 +8,7 @@ use time::{format_description, OffsetDateTime};
 use ui::view::{ChatListItem, MessageItem, UiState};
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct UiCacheBridge {
     pub state: UiState,
     selected_chat: Option<ChatId>,

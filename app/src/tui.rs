@@ -18,9 +18,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use telegram_llm_core::telegram::{
-    CacheManager, EventReceiver, MessageId, SendPipeline, SendRequest,
-};
+use telegram_llm_core::telegram::{CacheManager, EventReceiver, SendPipeline, SendRequest};
 use ui::input::InputState;
 use ui::interaction::{handle_ui_key, KeymapStyle, UiAction};
 use ui::view::{
@@ -31,10 +29,10 @@ use ui::view::{
 };
 
 use crate::command::UiCommand;
-use crate::llm_workflow::format_transcript;
 use crate::ui_state::UiCacheBridge;
 use crate::ConsoleLogGate;
-use llm::{LlmProvider, LlmRequest};
+use llm::kits;
+use llm::{self, LlmProvider};
 
 const DRAW_INTERVAL_MS: u64 = 250;
 const INPUT_POLL_MS: u64 = 100;
@@ -219,7 +217,14 @@ fn handle_ui_action(
             ui_bridge.refresh(cache_manager);
         }
         UiAction::ExportSelected => {
-            handle_export_selected(ui_bridge, cache_manager, ui_command_tx, llm_provider);
+            // Default to Reply kit if direct keypress (shortcut)
+            crate::actions::handle_export_selected(
+                ui_bridge,
+                cache_manager,
+                ui_command_tx,
+                llm_provider,
+                kits::get_default_kit(),
+            );
         }
         UiAction::OpenCommandPalette => {
             handle_open_command_palette(ui_bridge);
@@ -235,7 +240,11 @@ fn handle_ui_action(
 
 fn handle_open_command_palette(ui_bridge: &mut UiCacheBridge) {
     ui_bridge.state.command_palette.is_open = true;
-    ui_bridge.state.command_palette.items = vec!["Export Selected to LLM".to_string()];
+    let mut items = Vec::new();
+    for kit in kits::get_all_kits() {
+        items.push(format!("Export: {}", kit.name()));
+    }
+    ui_bridge.state.command_palette.items = items;
     ui_bridge.state.command_palette.selected = 0;
 }
 
@@ -250,9 +259,35 @@ fn handle_command_palette_submit(
     ui_bridge.state.command_palette.is_open = false;
 
     if let Some(command) = item {
+        if let Some(kit_name) = command.strip_prefix("Export: ") {
+            let all_kits = kits::get_all_kits();
+            if let Some(kit) = all_kits.into_iter().find(|k| k.name() == kit_name) {
+                // Update selected kit in state for future reference (optional, but good for consistency)
+                ui_bridge.state.selected_prompt_kit = kit.id().to_string();
+
+                crate::actions::handle_export_selected(
+                    ui_bridge,
+                    cache_manager,
+                    ui_command_tx,
+                    llm_provider,
+                    kit,
+                );
+                return;
+            } else {
+                warn!(kit_name, "kit not found");
+            }
+        }
+
         match command.as_str() {
             "Export Selected to LLM" => {
-                handle_export_selected(ui_bridge, cache_manager, ui_command_tx, llm_provider);
+                // Fallback for logic if ever used directly
+                crate::actions::handle_export_selected(
+                    ui_bridge,
+                    cache_manager,
+                    ui_command_tx,
+                    llm_provider,
+                    kits::get_default_kit(),
+                );
             }
             _ => {
                 warn!(command, "unknown command from palette");
@@ -273,54 +308,6 @@ fn handle_ui_command(command: UiCommand, ui_bridge: &mut UiCacheBridge) {
             ui_bridge.state.status_message = Some(text);
         }
     }
-}
-
-fn handle_export_selected(
-    ui_bridge: &mut UiCacheBridge,
-    cache_manager: &CacheManager,
-    ui_command_tx: mpsc::UnboundedSender<UiCommand>,
-    llm_provider: Arc<dyn LlmProvider>,
-) {
-    let selected_ids: Vec<MessageId> = ui_bridge
-        .state
-        .message_view
-        .selected_ids
-        .iter()
-        .map(|id| MessageId(*id))
-        .collect();
-
-    if selected_ids.is_empty() {
-        info!("no messages selected for export");
-        return;
-    }
-
-    let messages = cache_manager.get_messages_by_ids(selected_ids);
-    let transcript = format_transcript(&messages);
-    info!("exporting transcript to LLM");
-
-    let _ = ui_command_tx.send(UiCommand::ShowNotification(
-        "Processing export...".to_string(),
-    ));
-
-    tokio::spawn(async move {
-        let request = LlmRequest {
-            system_prompt: "You are a helpful assistant. Write a draft reply for the user based on the transcript. Keep it concise and natural.".to_string(),
-            user_instruction: "Draft a reply to this conversation. Return ONLY the reply text, no preamble.".to_string(),
-            transcript,
-        };
-
-        match llm_provider.generate_draft(request).await {
-            Ok(response) => {
-                if let Err(err) = ui_command_tx.send(UiCommand::UpdateComposer(response.text)) {
-                    warn!(error = %err, "failed to send update composer command");
-                }
-            }
-            Err(err) => {
-                let _ = ui_command_tx.send(UiCommand::ShowNotification(format!("Error: {}", err)));
-                warn!(error = %err, "llm provider failed");
-            }
-        }
-    });
 }
 
 fn handle_composer_submit(ui_bridge: &mut UiCacheBridge, send_pipeline: &SendPipeline) {

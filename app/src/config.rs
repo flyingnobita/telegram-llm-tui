@@ -35,7 +35,7 @@ const DEFAULT_CHAT_LIST_WIDTH: u16 = 32;
 const DEFAULT_LOG_WINDOW_MAX_LINES: usize = 500;
 const DEFAULT_LLM_ENABLED: bool = false;
 const DEFAULT_LLM_PROVIDER: &str = "mock";
-const DEFAULT_LM_STUDIO_BASE_URL: &str = "http://localhost:1234";
+const DEFAULT_LM_STUDIO_BASE_URL: &str = "http://localhost:1234/v1";
 const DEFAULT_LM_STUDIO_MODEL: &str = "gpt-3.5-turbo";
 
 #[derive(Debug, Clone, PartialEq, Eq)]

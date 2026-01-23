@@ -1,5 +1,6 @@
 # Changes
 
+- Jan-23, 2026 - 11:15 PM +0800 - Implemented Agent Mode for headless automation and testing, with support for Mock LLM and draft scenarios.
 - Jan-17, 2026 - 02:49 PM +0800 - Marked pending send pipeline items as failed
   on stop to prevent hanging status watchers, with a new test.
 - Jan-17, 2026 - 02:35 PM +0800 - Added peer-aware author identities for

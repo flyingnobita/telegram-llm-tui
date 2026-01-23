@@ -19,3 +19,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
 telegram_llm_core = { path = "../core" }
 ui = { path = "../ui" }
 llm = { path = "../llm" }
+clap = { version = "4.5.54", features = ["derive"] }
