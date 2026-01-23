@@ -46,6 +46,10 @@ struct Args {
     /// Force use of Mock LLM provider
     #[arg(long)]
     mock_llm: bool,
+
+    /// Keep the app running after agent test finishes
+    #[arg(long)]
+    agent_persist: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -205,6 +209,11 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             scenario,
         )
         .await?;
+
+        if args.agent_persist {
+            info!("agent test complete, persisting session (press Ctrl+C to exit)...");
+            tokio::signal::ctrl_c().await?;
+        }
     } else {
         run_tui_loop(
             cache_manager.as_ref(),
