@@ -5,11 +5,9 @@ pub use openai::OpenAiProvider;
 use async_trait::async_trait;
 use thiserror::Error;
 
-#[derive(Debug, Clone)]
 pub struct LlmRequest {
     pub system_prompt: String,
-    pub user_instruction: String,
-    pub transcript: String,
+    pub user_prompt: String,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +25,7 @@ pub enum LlmError {
     Configuration(String),
 }
 
+pub mod kits;
 pub mod openai;
 
 #[async_trait]
@@ -39,12 +38,8 @@ pub struct MockProvider;
 #[async_trait]
 impl LlmProvider for MockProvider {
     async fn generate_draft(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
-        let transcript_len = request.transcript.len();
         Ok(LlmResponse {
-            text: format!(
-                "Draft generated based on transcript ({} chars). Instruction: {}",
-                transcript_len, request.user_instruction
-            ),
+            text: format!("Mock response for prompt: {}", request.user_prompt),
         })
     }
 }

@@ -229,6 +229,7 @@ pub struct UiState {
     pub chat_list_width: u16,
     pub composer_cursor_visible: bool,
     pub status_message: Option<String>,
+    pub selected_prompt_kit: String,
 }
 
 impl Default for UiState {
@@ -249,6 +250,7 @@ impl Default for UiState {
             chat_list_width: DEFAULT_CHAT_LIST_WIDTH,
             composer_cursor_visible: true,
             status_message: None,
+            selected_prompt_kit: "reply".to_string(),
         }
     }
 }
