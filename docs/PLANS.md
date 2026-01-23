@@ -104,6 +104,8 @@ pipeline -> prompt kit -> safety.
 4. [ ] (4.4) Safety: truncate or zip transcripts to fit token limits; redact
        secrets before sending; avoid logging auth tokens; log prompts or responses
        for reproducibility (default on).
+5. [x] (4.5) LM Studio Support: Allow configuring a custom base URL for OpenAI-compatible
+       local providers (like LM Studio or Ollama). See `docs/plan-progress/4.5-lm-studio-support-sdd.md`.
 
 ## 5 Tooling, testing, and DX
 
