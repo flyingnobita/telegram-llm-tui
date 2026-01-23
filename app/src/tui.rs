@@ -34,6 +34,7 @@ use crate::command::UiCommand;
 use crate::llm_workflow::format_transcript;
 use crate::ui_state::UiCacheBridge;
 use crate::ConsoleLogGate;
+use llm::{LlmProvider, LlmRequest};
 
 const DRAW_INTERVAL_MS: u64 = 250;
 const INPUT_POLL_MS: u64 = 100;
@@ -51,6 +52,7 @@ pub async fn run_tui_loop(
     console_gate: ConsoleLogGate,
     log_path: PathBuf,
     log_window_max_lines: usize,
+    llm_provider: Arc<dyn LlmProvider>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("starting tui runtime");
     let _console_guard = ConsoleLogGuard::new(console_gate);
@@ -81,6 +83,7 @@ pub async fn run_tui_loop(
                         keymap,
                         send_pipeline,
                         ui_command_tx.clone(),
+                        llm_provider.clone(),
                     ) {
                         should_exit = true;
                     }
@@ -150,6 +153,7 @@ fn handle_input_event(
     keymap: KeymapStyle,
     send_pipeline: &SendPipeline,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
+    llm_provider: Arc<dyn LlmProvider>,
 ) -> bool {
     match event {
         InputEvent::Key(key) => handle_key_event(
@@ -159,6 +163,7 @@ fn handle_input_event(
             keymap,
             send_pipeline,
             ui_command_tx,
+            llm_provider,
         ),
         InputEvent::Resize(width, height) => {
             apply_page_size(&mut ui_bridge.state, Rect::new(0, 0, width, height));
@@ -174,6 +179,7 @@ fn handle_key_event(
     keymap: KeymapStyle,
     send_pipeline: &SendPipeline,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
+    llm_provider: Arc<dyn LlmProvider>,
 ) -> bool {
     if matches!(key.kind, KeyEventKind::Release) {
         return false;
@@ -193,6 +199,7 @@ fn handle_key_event(
             send_pipeline,
             cache_manager,
             ui_command_tx,
+            llm_provider,
         );
     }
     false
@@ -204,6 +211,7 @@ fn handle_ui_action(
     send_pipeline: &SendPipeline,
     cache_manager: &CacheManager,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
+    llm_provider: Arc<dyn LlmProvider>,
 ) {
     match action {
         UiAction::ComposerSubmit => handle_composer_submit(ui_bridge, send_pipeline),
@@ -211,13 +219,13 @@ fn handle_ui_action(
             ui_bridge.refresh(cache_manager);
         }
         UiAction::ExportSelected => {
-            handle_export_selected(ui_bridge, cache_manager, ui_command_tx);
+            handle_export_selected(ui_bridge, cache_manager, ui_command_tx, llm_provider);
         }
         UiAction::OpenCommandPalette => {
             handle_open_command_palette(ui_bridge);
         }
         UiAction::CommandPaletteSubmit => {
-            handle_command_palette_submit(ui_bridge, cache_manager, ui_command_tx);
+            handle_command_palette_submit(ui_bridge, cache_manager, ui_command_tx, llm_provider);
         }
         UiAction::SelectAllInView => {
             ui::interaction::select_all_in_view(&mut ui_bridge.state);
@@ -235,6 +243,7 @@ fn handle_command_palette_submit(
     ui_bridge: &mut UiCacheBridge,
     cache_manager: &CacheManager,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
+    llm_provider: Arc<dyn LlmProvider>,
 ) {
     let selected = ui_bridge.state.command_palette.selected;
     let item = ui_bridge.state.command_palette.items.get(selected).cloned();
@@ -243,7 +252,7 @@ fn handle_command_palette_submit(
     if let Some(command) = item {
         match command.as_str() {
             "Export Selected to LLM" => {
-                handle_export_selected(ui_bridge, cache_manager, ui_command_tx);
+                handle_export_selected(ui_bridge, cache_manager, ui_command_tx, llm_provider);
             }
             _ => {
                 warn!(command, "unknown command from palette");
@@ -270,6 +279,7 @@ fn handle_export_selected(
     ui_bridge: &mut UiCacheBridge,
     cache_manager: &CacheManager,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
+    llm_provider: Arc<dyn LlmProvider>,
 ) {
     let selected_ids: Vec<MessageId> = ui_bridge
         .state
@@ -288,29 +298,18 @@ fn handle_export_selected(
     let transcript = format_transcript(&messages);
     info!("exporting transcript to LLM");
 
-    let api_key = ui_bridge.openai_api_key.clone();
-    let model = ui_bridge.llm_model.clone();
-
     let _ = ui_command_tx.send(UiCommand::ShowNotification(
         "Processing export...".to_string(),
     ));
 
     tokio::spawn(async move {
-        use llm::{LlmProvider, LlmRequest, MockProvider, OpenAIProvider};
-
-        let provider: Box<dyn LlmProvider> = if let Some(key) = api_key {
-            Box::new(OpenAIProvider::new(&key, &model))
-        } else {
-            Box::new(MockProvider)
-        };
-
         let request = LlmRequest {
             system_prompt: "You are a helpful assistant. Write a draft reply for the user based on the transcript. Keep it concise and natural.".to_string(),
             user_instruction: "Draft a reply to this conversation. Return ONLY the reply text, no preamble.".to_string(),
             transcript,
         };
 
-        match provider.generate_draft(request).await {
+        match llm_provider.generate_draft(request).await {
             Ok(response) => {
                 if let Err(err) = ui_command_tx.send(UiCommand::UpdateComposer(response.text)) {
                     warn!(error = %err, "failed to send update composer command");

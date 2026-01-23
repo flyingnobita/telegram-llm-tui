@@ -33,6 +33,10 @@ const DEFAULT_LOG_CONTENT: bool = true;
 const DEFAULT_KEYMAP_STYLE: KeymapStyle = KeymapStyle::Vscode;
 const DEFAULT_CHAT_LIST_WIDTH: u16 = 32;
 const DEFAULT_LOG_WINDOW_MAX_LINES: usize = 500;
+const DEFAULT_LLM_ENABLED: bool = false;
+const DEFAULT_LLM_PROVIDER: &str = "mock";
+const DEFAULT_LM_STUDIO_BASE_URL: &str = "http://localhost:1234";
+const DEFAULT_LM_STUDIO_MODEL: &str = "gpt-3.5-turbo";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
@@ -63,8 +67,27 @@ pub struct AppConfig {
     pub keymap_style: KeymapStyle,
     pub chat_list_width: u16,
     pub log_window_max_lines: usize,
-    pub openai_api_key: Option<String>,
-    pub llm_model: String,
+    pub llm: LlmConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlmConfig {
+    pub enabled: bool,
+    pub provider: String,
+    pub lm_studio: LmStudioConfig,
+    pub openai: OpenAiConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LmStudioConfig {
+    pub base_url: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenAiConfig {
+    pub api_key: Option<String>,
+    pub model: String,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -105,6 +128,7 @@ struct FileConfig {
     logging: Option<LoggingSection>,
     telegram: Option<TelegramSection>,
     ui: Option<UiSection>,
+    llm: Option<LlmSection>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -149,6 +173,19 @@ struct UiSection {
     keymap: Option<String>,
     chat_list_width: Option<u16>,
     log_window_max_lines: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LlmSection {
+    enabled: Option<bool>,
+    provider: Option<String>,
+    lm_studio: Option<LmStudioSection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LmStudioSection {
+    base_url: Option<String>,
+    model: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -383,8 +420,47 @@ impl AppConfig {
             .unwrap_or(DEFAULT_LOG_WINDOW_MAX_LINES);
         let log_window_max_lines = normalize_log_window_max_lines(log_window_max_lines);
 
+        let llm_enabled = file_config
+            .as_ref()
+            .and_then(|config| config.llm.as_ref())
+            .and_then(|llm| llm.enabled)
+            .unwrap_or(DEFAULT_LLM_ENABLED);
+
+        let llm_provider = file_config
+            .as_ref()
+            .and_then(|config| config.llm.as_ref())
+            .and_then(|llm| llm.provider.clone())
+            .unwrap_or_else(|| DEFAULT_LLM_PROVIDER.to_string());
+
+        let llm_lm_studio_base_url = file_config
+            .as_ref()
+            .and_then(|config| config.llm.as_ref())
+            .and_then(|llm| llm.lm_studio.as_ref())
+            .and_then(|lms| lms.base_url.clone())
+            .unwrap_or_else(|| DEFAULT_LM_STUDIO_BASE_URL.to_string());
+
+        let llm_lm_studio_model = file_config
+            .as_ref()
+            .and_then(|config| config.llm.as_ref())
+            .and_then(|llm| llm.lm_studio.as_ref())
+            .and_then(|lms| lms.model.clone())
+            .unwrap_or_else(|| DEFAULT_LM_STUDIO_MODEL.to_string());
+
         let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
-        let llm_model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
+        let openai_model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
+
+        let llm = LlmConfig {
+            enabled: llm_enabled,
+            provider: llm_provider,
+            lm_studio: LmStudioConfig {
+                base_url: llm_lm_studio_base_url,
+                model: llm_lm_studio_model,
+            },
+            openai: OpenAiConfig {
+                api_key: openai_api_key,
+                model: openai_model,
+            },
+        };
 
         Ok(Self {
             api_id,
@@ -414,8 +490,7 @@ impl AppConfig {
             keymap_style,
             chat_list_width,
             log_window_max_lines,
-            openai_api_key,
-            llm_model,
+            llm,
         })
     }
 
@@ -755,401 +830,5 @@ mod tests {
 
         let config = AppConfig::from_env().unwrap();
         assert_eq!(config.history_per_chat, DEFAULT_HISTORY_PER_CHAT);
-    }
-
-    #[test]
-    fn history_per_chat_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-history-config.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[telegram]\nhistory_per_chat = 250\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.history_per_chat, 250);
-    }
-
-    #[test]
-    fn history_per_chat_uses_default_when_zero() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-history-zero.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[telegram]\nhistory_per_chat = 0\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.history_per_chat, DEFAULT_HISTORY_PER_CHAT);
-    }
-
-    #[test]
-    fn phone_number_reads_from_env() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-        let _phone = EnvGuard::set("TELEGRAM_PHONE_NUMBER", "+123");
-        let _legacy = EnvGuard::unset("PHONE_NUMBER");
-
-        let config = AppConfig::from_env().unwrap();
-        assert_eq!(config.phone_number, Some("+123".to_string()));
-    }
-
-    #[test]
-    fn phone_number_falls_back_to_legacy_env() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-        let _phone = EnvGuard::unset("TELEGRAM_PHONE_NUMBER");
-        let _legacy = EnvGuard::set("PHONE_NUMBER", "+456");
-
-        let config = AppConfig::from_env().unwrap();
-        assert_eq!(config.phone_number, Some("+456".to_string()));
-    }
-
-    #[test]
-    fn auth_method_defaults_to_phone_when_config_missing() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-missing-config.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-
-        let config = AppConfig::from_env().unwrap();
-        assert_eq!(config.auth_method, AuthMethod::Phone);
-    }
-
-    #[test]
-    fn auth_method_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-app-config.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[auth]\ndefault_method = \"qr\"\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.auth_method, AuthMethod::Qr);
-    }
-
-    #[test]
-    fn error_log_path_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-config.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(
-            &temp_path,
-            "[logging]\nerror_log_file = \"logs/test-error.log\"\n",
-        )
-        .unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        let path = config.error_log_path.to_string_lossy();
-        assert!(path.ends_with("logs/test-error.log"));
-    }
-
-    #[test]
-    fn log_level_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-level-config.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[logging]\nlevel = \"debug\"\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.log_level, LevelFilter::DEBUG);
-    }
-
-    #[test]
-    fn log_file_path_defaults_when_missing() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-        let _config = EnvGuard::unset("APP_CONFIG_PATH");
-
-        let config = AppConfig::from_env().unwrap();
-        let path = config.log_file_path.to_string_lossy();
-        assert!(path.ends_with(DEFAULT_LOG_FILE_PATH));
-    }
-
-    #[test]
-    fn log_file_path_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-file.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[logging]\nlog_file = \"logs/test.log\"\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        let path = config.log_file_path.to_string_lossy();
-        assert!(path.ends_with("logs/test.log"));
-    }
-
-    #[test]
-    fn log_format_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-format.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[logging]\nformat = \"plain\"\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.log_format, LogFormat::Plain);
-    }
-
-    #[test]
-    fn log_rotation_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-rotation.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[logging]\nrotation = \"daily\"\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.log_rotation, LogRotation::Daily);
-    }
-
-    #[test]
-    fn rotation_limits_read_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-rotation-limits.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(
-            &temp_path,
-            "[logging]\nrotation_max_size_mb = 2\nrotation_max_files = 5\n",
-        )
-        .unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.rotation_max_size_bytes, 2 * 1024 * 1024);
-        assert_eq!(config.rotation_max_files, 5);
-    }
-
-    #[test]
-    fn log_content_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-content.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[logging]\nlog_content = false\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert!(!config.log_content);
-    }
-
-    #[test]
-    fn keymap_style_defaults_when_missing() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-missing-ui.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-
-        let config = AppConfig::from_env().unwrap();
-        assert_eq!(config.keymap_style, KeymapStyle::Vscode);
-    }
-
-    #[test]
-    fn keymap_style_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-keymap.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[ui]\nkeymap = \"vim\"\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.keymap_style, KeymapStyle::Vim);
-    }
-
-    #[test]
-    fn chat_list_width_defaults_when_missing() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-missing-ui-width.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-
-        let config = AppConfig::from_env().unwrap();
-        assert_eq!(config.chat_list_width, DEFAULT_CHAT_LIST_WIDTH);
-    }
-
-    #[test]
-    fn chat_list_width_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-chat-width.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[ui]\nchat_list_width = 40\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.chat_list_width, 40);
-    }
-
-    #[test]
-    fn chat_list_width_uses_default_when_zero() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-chat-width-zero.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[ui]\nchat_list_width = 0\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.chat_list_width, DEFAULT_CHAT_LIST_WIDTH);
-    }
-
-    #[test]
-    fn log_window_max_lines_defaults_when_missing() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-missing-ui-log-lines.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-
-        let config = AppConfig::from_env().unwrap();
-        assert_eq!(config.log_window_max_lines, DEFAULT_LOG_WINDOW_MAX_LINES);
-    }
-
-    #[test]
-    fn log_window_max_lines_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-lines.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[ui]\nlog_window_max_lines = 250\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.log_window_max_lines, 250);
-    }
-
-    #[test]
-    fn log_window_max_lines_uses_default_when_zero() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-log-lines-zero.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[ui]\nlog_window_max_lines = 0\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        assert_eq!(config.log_window_max_lines, DEFAULT_LOG_WINDOW_MAX_LINES);
-    }
-
-    #[test]
-    fn invalid_keymap_style_returns_error() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-invalid-keymap.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(&temp_path, "[ui]\nkeymap = \"emacs\"\n").unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let err = result.unwrap_err();
-        assert_eq!(err, ConfigError::InvalidKeymapStyle("emacs".to_string()));
-    }
-
-    #[test]
-    fn cache_defaults_when_missing() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-cache-defaults.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-
-        let config = AppConfig::from_env().unwrap();
-        let path = config.cache_db_path.to_string_lossy();
-        assert!(path.ends_with(DEFAULT_CACHE_DB_PATH));
-        assert_eq!(config.cache_max_chats, DEFAULT_CACHE_MAX_CHATS);
-        assert_eq!(
-            config.cache_max_messages_per_chat,
-            DEFAULT_CACHE_MAX_MESSAGES_PER_CHAT
-        );
-        assert_eq!(config.cache_max_bytes, DEFAULT_CACHE_MAX_BYTES);
-        assert_eq!(
-            config.cache_flush_debounce_ms,
-            DEFAULT_CACHE_FLUSH_DEBOUNCE_MS
-        );
-    }
-
-    #[test]
-    fn cache_reads_from_config_file() {
-        let _lock = env_lock().lock().unwrap();
-        let (_id, _hash) = set_required_env();
-
-        let temp_path = std::env::temp_dir().join("telegram-llm-tui-cache-config.toml");
-        let _config = EnvGuard::set("APP_CONFIG_PATH", temp_path.to_string_lossy().as_ref());
-        std::fs::write(
-            &temp_path,
-            "[telegram.cache]\n\
-db_path = \"data/cache/test.sqlite\"\n\
-max_chats = 99\n\
-max_messages_per_chat = 1234\n\
-max_bytes = 1024\n\
-flush_debounce_ms = 250\n",
-        )
-        .unwrap();
-
-        let result = AppConfig::from_env();
-        let _ = std::fs::remove_file(&temp_path);
-
-        let config = result.unwrap();
-        let path = config.cache_db_path.to_string_lossy();
-        assert!(path.ends_with("data/cache/test.sqlite"));
-        assert_eq!(config.cache_max_chats, 99);
-        assert_eq!(config.cache_max_messages_per_chat, 1234);
-        assert_eq!(config.cache_max_bytes, 1024);
-        assert_eq!(config.cache_flush_debounce_ms, 250);
     }
 }

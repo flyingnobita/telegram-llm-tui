@@ -1,5 +1,6 @@
 use crate::{LlmError, LlmProvider, LlmRequest, LlmResponse};
 use async_openai::{
+    config::OpenAIConfig,
     types::{
         ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
         ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
@@ -8,24 +9,33 @@ use async_openai::{
 };
 use async_trait::async_trait;
 
-pub struct OpenAIProvider {
-    client: Client<async_openai::config::OpenAIConfig>,
+pub struct OpenAiProvider {
+    client: Client<OpenAIConfig>,
     model: String,
 }
 
-impl OpenAIProvider {
-    pub fn new(api_key: &str, model: &str) -> Self {
-        let config = async_openai::config::OpenAIConfig::new().with_api_key(api_key);
-        let client = Client::with_config(config);
-        Self {
-            client,
-            model: model.to_string(),
+impl OpenAiProvider {
+    pub fn new(base_url: Option<String>, api_key: Option<String>, model: String) -> Self {
+        let mut config = OpenAIConfig::new();
+
+        if let Some(url) = base_url {
+            config = config.with_api_base(url);
         }
+
+        if let Some(key) = api_key {
+            config = config.with_api_key(key);
+        } else {
+            // Provide dummy key if none exists (e.g. for local LM Studio)
+            config = config.with_api_key("dummy");
+        }
+
+        let client = Client::with_config(config);
+        Self { client, model }
     }
 }
 
 #[async_trait]
-impl LlmProvider for OpenAIProvider {
+impl LlmProvider for OpenAiProvider {
     async fn generate_draft(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
         let system_msg = ChatCompletionRequestSystemMessageArgs::default()
             .content(request.system_prompt.as_str())

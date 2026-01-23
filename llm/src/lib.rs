@@ -1,7 +1,6 @@
 //! LLM providers and prompt templates.
 
-mod openai;
-pub use openai::OpenAIProvider;
+pub use openai::OpenAiProvider;
 
 use async_trait::async_trait;
 use thiserror::Error;
@@ -24,7 +23,11 @@ pub enum LlmError {
     Provider(String),
     #[error("network error: {0}")]
     Network(String),
+    #[error("configuration error: {0}")]
+    Configuration(String),
 }
+
+pub mod openai;
 
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
