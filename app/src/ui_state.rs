@@ -13,7 +13,9 @@ pub struct UiCacheBridge {
     selected_chat: Option<ChatId>,
     message_limit: Option<usize>,
     chat_peers: HashMap<ChatId, PeerRef>,
+    #[allow(dead_code)]
     pub openai_api_key: Option<String>,
+    #[allow(dead_code)]
     pub llm_model: String,
 }
 
