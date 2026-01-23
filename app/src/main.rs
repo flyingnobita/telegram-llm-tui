@@ -1,9 +1,13 @@
+mod actions;
+mod agent;
 mod command;
 mod config;
 mod llm_workflow;
 mod prompt;
 mod tui;
 mod ui_state;
+
+use clap::Parser;
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -33,6 +37,18 @@ use crate::ui_state::UiCacheBridge;
 use llm::openai::OpenAiProvider;
 use llm::{LlmProvider, MockProvider};
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Run in agent test mode with the specified scenario
+    #[arg(long, value_name = "SCENARIO")]
+    agent_test: Option<String>,
+
+    /// Force use of Mock LLM provider
+    #[arg(long)]
+    mock_llm: bool,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -43,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
+    let args = Args::parse();
     let config = AppConfig::from_env()?;
     let console_gate = init_tracing(&config)?;
     info!("loaded configuration");
@@ -159,7 +176,10 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
-    let llm_provider: Arc<dyn LlmProvider> = if config.llm.enabled {
+    let llm_provider: Arc<dyn LlmProvider> = if args.mock_llm {
+        info!("using mock llm provider (forced)");
+        Arc::new(MockProvider)
+    } else if config.llm.enabled {
         match config.llm.provider.as_str() {
             "lm_studio" => {
                 let base_url = config.llm.lm_studio.base_url.clone();
@@ -177,19 +197,30 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(MockProvider)
     };
 
-    run_tui_loop(
-        cache_manager.as_ref(),
-        &mut ui_bridge,
-        event_rx,
-        cache_refresh_rx,
-        config.keymap_style,
-        &send_pipeline,
-        console_gate.clone(),
-        config.log_file_path.clone(),
-        config.log_window_max_lines,
-        llm_provider,
-    )
-    .await?;
+    if let Some(scenario) = args.agent_test {
+        agent::run_agent_loop(
+            cache_manager.as_ref(),
+            &mut ui_bridge,
+            &send_pipeline,
+            llm_provider,
+            scenario,
+        )
+        .await?;
+    } else {
+        run_tui_loop(
+            cache_manager.as_ref(),
+            &mut ui_bridge,
+            event_rx,
+            cache_refresh_rx,
+            config.keymap_style,
+            &send_pipeline,
+            console_gate.clone(),
+            config.log_file_path.clone(),
+            config.log_window_max_lines,
+            llm_provider,
+        )
+        .await?;
+    }
 
     if let Some(handle) = history_handle {
         handle.abort();
