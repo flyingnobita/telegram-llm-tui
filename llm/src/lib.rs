@@ -1,5 +1,8 @@
 //! LLM providers and prompt templates.
 
+mod openai;
+pub use openai::OpenAIProvider;
+
 use async_trait::async_trait;
 use thiserror::Error;
 

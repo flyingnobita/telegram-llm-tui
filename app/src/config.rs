@@ -63,6 +63,8 @@ pub struct AppConfig {
     pub keymap_style: KeymapStyle,
     pub chat_list_width: u16,
     pub log_window_max_lines: usize,
+    pub openai_api_key: Option<String>,
+    pub llm_model: String,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -381,6 +383,9 @@ impl AppConfig {
             .unwrap_or(DEFAULT_LOG_WINDOW_MAX_LINES);
         let log_window_max_lines = normalize_log_window_max_lines(log_window_max_lines);
 
+        let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
+        let llm_model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
+
         Ok(Self {
             api_id,
             api_hash,
@@ -409,6 +414,8 @@ impl AppConfig {
             keymap_style,
             chat_list_width,
             log_window_max_lines,
+            openai_api_key,
+            llm_model,
         })
     }
 

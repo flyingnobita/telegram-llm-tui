@@ -288,17 +288,25 @@ fn handle_export_selected(
     let transcript = format_transcript(&messages);
     info!("exporting transcript to LLM");
 
+    let api_key = ui_bridge.openai_api_key.clone();
+    let model = ui_bridge.llm_model.clone();
+
     let _ = ui_command_tx.send(UiCommand::ShowNotification(
         "Processing export...".to_string(),
     ));
 
     tokio::spawn(async move {
-        use llm::{LlmProvider, LlmRequest, MockProvider};
+        use llm::{LlmProvider, LlmRequest, MockProvider, OpenAIProvider};
 
-        let provider = MockProvider;
+        let provider: Box<dyn LlmProvider> = if let Some(key) = api_key {
+            Box::new(OpenAIProvider::new(&key, &model))
+        } else {
+            Box::new(MockProvider)
+        };
+
         let request = LlmRequest {
-            system_prompt: "You are a helpful assistant.".to_string(),
-            user_instruction: "Draft a reply to this conversation.".to_string(),
+            system_prompt: "You are a helpful assistant. Write a draft reply for the user based on the transcript. Keep it concise and natural.".to_string(),
+            user_instruction: "Draft a reply to this conversation. Return ONLY the reply text, no preamble.".to_string(),
             transcript,
         };
 
