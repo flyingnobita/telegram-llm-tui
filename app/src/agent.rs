@@ -3,14 +3,15 @@ use tokio::sync::mpsc;
 use tracing::{error, info};
 
 use crate::command::UiCommand;
-use crate::ui_state::UiCacheBridge;
+
 use llm::{self, LlmProvider};
 use telegram_llm_core::telegram::{CacheManager, SendPipeline};
+use ui::bridge::UiCacheBridge;
 
 pub async fn run_agent_loop(
     cache_manager: &CacheManager,
     ui_bridge: &mut UiCacheBridge,
-    _send_pipeline: &SendPipeline,
+    send_pipeline: &SendPipeline,
     llm_provider: Arc<dyn LlmProvider>,
     scenario: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -18,6 +19,14 @@ pub async fn run_agent_loop(
 
     match scenario.as_str() {
         "draft_reply" => run_draft_reply_scenario(cache_manager, ui_bridge, llm_provider).await?,
+        "send_jan_greeting" => {
+            integration_tests::test_scenarios::send_jan_greeting::run(
+                cache_manager,
+                ui_bridge,
+                send_pipeline,
+            )
+            .await?
+        }
         _ => {
             error!(scenario, "unknown scenario");
             return Err("Unknown scenario".into());

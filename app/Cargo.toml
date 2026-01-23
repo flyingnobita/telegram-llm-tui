@@ -12,11 +12,17 @@ serde = { version = "1", features = ["derive"] }
 time = { version = "0.3", features = ["formatting", "local-offset"] }
 thiserror = "1"
 toml = "0.8"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "signal",
+    "time",
+] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
 telegram_llm_core = { path = "../core" }
 ui = { path = "../ui" }
+integration_tests = { path = "../integration-tests" }
 llm = { path = "../llm" }
 clap = { version = "4.5.54", features = ["derive"] }

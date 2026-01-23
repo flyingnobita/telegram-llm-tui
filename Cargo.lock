@@ -101,6 +101,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dotenvy",
+ "integration_tests",
  "llm",
  "ratatui",
  "serde",
@@ -1320,6 +1321,9 @@ dependencies = [
  "grammers-mtsender",
  "grammers-tl-types",
  "telegram_llm_core",
+ "tokio",
+ "tracing",
+ "ui",
 ]
 
 [[package]]
@@ -3055,6 +3059,9 @@ dependencies = [
  "crossterm",
  "insta",
  "ratatui",
+ "telegram_llm_core",
+ "time",
+ "tokio",
 ]
 
 [[package]]

@@ -8,3 +8,6 @@ telegram_llm_core = { path = "../core", features = ["test-support"] }
 grammers-client = "0.8.1"
 grammers-mtsender = "0.8.1"
 grammers-tl-types = "0.8.0"
+ui = { path = "../ui" }
+tokio = { version = "1", features = ["macros", "rt"] }
+tracing = "0.1"

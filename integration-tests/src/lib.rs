@@ -1,1 +1,1 @@
-//! Integration test crate scaffold.
+pub mod test_scenarios;
