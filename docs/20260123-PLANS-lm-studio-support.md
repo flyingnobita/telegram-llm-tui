@@ -6,9 +6,9 @@
 
 ## 1. High-Level Goals
 
-1.  **Refactor Config**: Split LLM configuration into provider-specific sections `[llm.lm_studio]`, `[llm.openai]`.
-2.  **Generic Provider**: Implement a flexible `OpenAiProvider` that can target any compatible endpoint.
-3.  **Dynamic wiring**: Update `main.rs` to select and build the generic provider at runtime.
+1. **Refactor Config**: Split LLM configuration into provider-specific sections `[llm.lm_studio]`, `[llm.openai]`.
+2. **Generic Provider**: Implement a flexible `OpenAiProvider` that can target any compatible endpoint.
+3. **Dynamic wiring**: Update `main.rs` to select and build the generic provider at runtime.
 
 ## 2. Dependencies
 
@@ -17,16 +17,16 @@
 
 ## 3. Implementation Steps
 
-1.  **Dependency Update**: Add `async-openai` to `llm/Cargo.toml`.
-2.  **Config Refactor**:
+1. **Dependency Update**: Add `async-openai` to `llm/Cargo.toml`.
+2. **Config Refactor**:
     - Add `LmStudioConfig` struct.
     - Update `AppConfig` parser.
-3.  **Provider Implementation**:
+3. **Provider Implementation**:
     - Update `OpenAiProvider` to builder pattern accepting `base_url` and `api_key`.
     - Handle `None` keys (dummy default).
-4.  **Application Wiring**:
+4. **Application Wiring**:
     - Switch-case in `main.rs` to initialize `OpenAiProvider` with either Local or Remote settings.
-5.  **Clean Up**: Remove ad-hoc config passing in `UiCacheBridge`.
+5. **Clean Up**: Remove ad-hoc config passing in `UiCacheBridge`.
 
 ## 4. Verification
 

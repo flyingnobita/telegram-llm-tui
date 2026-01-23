@@ -11,9 +11,9 @@ The application currently relies on a `MockProvider` or a hardcoded OpenAI imple
 
 ## 2. Goals
 
-1.  **Local Privacy**: Allow generation of message drafts without internet access or third-party data processing.
-2.  **Configurability**: Support configuration of custom Base URLs and Models via `app.toml`.
-3.  **Extensibility**: Refactor the configuration shape to easily support more providers in the future.
+1. **Local Privacy**: Allow generation of message drafts without internet access or third-party data processing.
+2. **Configurability**: Support configuration of custom Base URLs and Models via `app.toml`.
+3. **Extensibility**: Refactor the configuration shape to easily support more providers in the future.
 
 ## 3. Detailed Behavior
 

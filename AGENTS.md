@@ -95,7 +95,7 @@ Tool versions are managed via **mise-en-place**.
 ### Build & Verify
 
 - **Setup:** `mise install` (Installs pinned Rust toolchain & helpers).
- - **Build:** `cargo build`
+- **Build:** `cargo build`
 - **Unit Tests:** `cargo test`
 - **UI Snapshots:** `INSTA_UPDATE=always mise exec -- cargo test -p ui`
 - **Lint/Format:**

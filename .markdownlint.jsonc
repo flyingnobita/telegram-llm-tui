@@ -1,0 +1,4 @@
+{
+  "default": true,
+  "MD013": false // MD013: Line length (default: 80 characters). Disabled to allow long lines in documentation.
+}

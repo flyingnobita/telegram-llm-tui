@@ -16,11 +16,12 @@ This crate supports **Agent Native Development (AND)**. For usage examples and a
 
 - **Telegram:** `grammers` (MTProto).
 - **Storage:** `sqlite3` (via `grammers-session`).
-    - *Note:* Requires native build tools (Xcode on macOS, build-essential on Linux).
+  - _Note:_ Requires native build tools (Xcode on macOS, build-essential on Linux).
 
 ## Logging
 
 Logging is configured by the consumer (e.g., `app`).
+
 - **Standard:** `tracing` crate.
 - **Levels:** Configurable (INFO/DEBUG/TRACE).
 - **Files:** Typically `logs/app.log` and `logs/app-error.log`.

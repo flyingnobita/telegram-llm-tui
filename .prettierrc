@@ -1,0 +1,11 @@
+{
+  "overrides": [
+    {
+      "files": ["*.json", "*.jsonc", ".markdownlint.jsonc"],
+      "options": {
+        "trailingComma": "none",
+        "parser": "json"
+      }
+    }
+  ]
+}
