@@ -79,7 +79,7 @@ let ticket = send_pipeline.enqueue(request).await?;
 
 ## 3. Project Structure
 
-- **Roots:** `PLANS.md` (Execution), `SPECS.md` (Requirements), `CHANGES.md` (Changelog).
+- **Roots:** `PLANS.md` (Execution), `SPECS.md` (Requirements), `CHANGES.md` (Changelog), `BUGS.md` (Known Issues).
 - **Decisions:** `docs/adr/`.
 - **Workspace:**
   - `app/` (Binary)
