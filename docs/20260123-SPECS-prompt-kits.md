@@ -10,9 +10,9 @@ The current LLM export pipeline allows sending a transcript to an LLM, but the p
 
 We need a flexible "Prompt Kit" system to:
 
-1.  Encapsulate specific instructions (system prompts) for these different tasks.
-2.  Allow the user to select which kit to apply.
-3.  Version these prompts to ensure reproducibility and safe iteration.
+1. Encapsulate specific instructions (system prompts) for these different tasks.
+2. Allow the user to select which kit to apply.
+3. Version these prompts to ensure reproducibility and safe iteration.
 
 ## 2. Goals
 
@@ -56,17 +56,17 @@ pub trait PromptKit: Send + Sync {
 
 ### 3.2 Built-in Kits
 
-1.  **DraftReplyKit** (Default)
-    - System: "You are a helpful assistant drafting replies for Telegram..."
-    - User: "Context:\n{transcript}\n\nInstruction: {instruction}"
-2.  **SummarizeKit**
-    - System: "You are an expert summarizer. Condense the following discussion..."
-    - User: "Conversation:\n{transcript}"
-3.  **ActionItemsKit**
-    - System: "Extract all action items, tasks, and deadlines..."
-    - User: "Conversation:\n{transcript}"
-4.  **SentimentKit**
-    - System: "Analyze the tone and priority of this thread..."
+1. **DraftReplyKit** (Default)
+   - System: "You are a helpful assistant drafting replies for Telegram..."
+   - User: "Context:\n{transcript}\n\nInstruction: {instruction}"
+2. **SummarizeKit**
+   - System: "You are an expert summarizer. Condense the following discussion..."
+   - User: "Conversation:\n{transcript}"
+3. **ActionItemsKit**
+   - System: "Extract all action items, tasks, and deadlines..."
+   - User: "Conversation:\n{transcript}"
+4. **SentimentKit**
+   - System: "Analyze the tone and priority of this thread..."
 
 ### 3.3 UI Changes (`ui` crate)
 

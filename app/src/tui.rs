@@ -32,10 +32,13 @@ use crate::command::UiCommand;
 use crate::ui_state::UiCacheBridge;
 use crate::ConsoleLogGate;
 use llm::kits;
-use llm::{self, LlmProvider};
+use llm::LlmProvider;
 
 const DRAW_INTERVAL_MS: u64 = 250;
 const INPUT_POLL_MS: u64 = 100;
+
+// ... inside call sites ...
+
 const LOG_REFRESH_INTERVAL_MS: u64 = 500;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 

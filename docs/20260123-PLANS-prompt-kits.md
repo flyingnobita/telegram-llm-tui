@@ -32,7 +32,7 @@
 
 ## Step-by-Step
 
-1.  Create `llm/src/kits.rs` and the traits/structs.
-2.  Expose them in `llm/src/lib.rs`.
-3.  Update the calling code in `app` to use a kit (hardcoded `DraftReplyKit` first).
-4.  Add UI controls to switch kits.
+1. Create `llm/src/kits.rs` and the traits/structs.
+2. Expose them in `llm/src/lib.rs`.
+3. Update the calling code in `app` to use a kit (hardcoded `DraftReplyKit` first).
+4. Add UI controls to switch kits.

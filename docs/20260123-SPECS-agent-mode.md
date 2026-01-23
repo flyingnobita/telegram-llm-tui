@@ -8,10 +8,10 @@ Currently, the app only runs as a TUI, which captures stdout/stderr and requires
 
 ## Goals
 
-1.  **Headless Operation**: Add a CLI mode that bypasses the TUI completely.
-2.  **Scenario Execution**: Allow the agent to trigger specific functional flows (e.g., "Draft Reply").
-3.  **Verifiable Output**: Emit structured or grep-able logs to stdout indicating success or failure.
-4.  **Graceful Exit**: The app must terminate automatically after the scenario completes.
+1. **Headless Operation**: Add a CLI mode that bypasses the TUI completely.
+2. **Scenario Execution**: Allow the agent to trigger specific functional flows (e.g., "Draft Reply").
+3. **Verifiable Output**: Emit structured or grep-able logs to stdout indicating success or failure.
+4. **Graceful Exit**: The app must terminate automatically after the scenario completes.
 
 ## CLI Design
 
@@ -24,13 +24,13 @@ telegram-llm-tui --agent-test <SCENARIO>
 Scenarios:
 
 - `draft_reply`:
-  1.  Connect to Telegram.
-  2.  Select a chat with messages.
-  3.  Select the latest message.
-  4.  Invoke the "Default Prompt Kit" (Reply).
-  5.  Wait for the generated draft.
-  6.  Verify draft is non-empty.
-  7.  Exit 0 on success, 1 on timeout/error.
+  1. Connect to Telegram.
+  2. Select a chat with messages.
+  3. Select the latest message.
+  4. Invoke the "Default Prompt Kit" (Reply).
+  5. Wait for the generated draft.
+  6. Verify draft is non-empty.
+  7. Exit 0 on success, 1 on timeout/error.
 
 ## Architecture Changes
 
