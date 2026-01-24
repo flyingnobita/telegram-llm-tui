@@ -1,5 +1,7 @@
 # Changes
 
+- Jan-24, 2026 - 10:00 PM +0800 - Fixed CI test failure by skipping clipboard verification
+  integration tests when running in CI environments.
 - Jan-24, 2026 - 09:26 PM +0800 - Fixed CI/Local hook discrepancy by
   enforcing strict Clippy checks locally and adding pre-push tests.
 - Jan-24, 2026 - 08:55 PM +0800 - Fixed clipboard copy on headless systems by adding OSC 52 fallback.

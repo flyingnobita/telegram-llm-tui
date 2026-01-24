@@ -7,6 +7,13 @@ use ui::view::{get_selected_log_text, UiState};
 async fn verify_clipboard_persistence_and_file_paste() {
     // 1. Setup realistic log data matching user request
     let log_line = "2026-01-24T00:53:52.671+08:00 INFO telegram_llm_core::telegram::cache: cache flushed chats=523 messages=19077".to_string();
+
+    // Skip in CI environments where system clipboard is unavailable
+    if std::env::var("CI").is_ok() {
+        println!("Skipping clipboard verification in CI environment");
+        return;
+    }
+
     let mut state = UiState {
         logs: vec![
             "Previous line...".to_string(),
