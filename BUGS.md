@@ -10,3 +10,4 @@
 8. [ ] Jan-24, 2026 - Log window is not starting with the last line.
 9. [x] Jan-24, 2026 - Log window moving selection with PageUp/PageDown.
 10. [x] Jan-24, 2026 - Logs are not being written to log files.
+11. [ ] Jan-24, 2026 - Log window should select the whole wrapped line.
