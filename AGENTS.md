@@ -103,6 +103,9 @@ Tool versions are managed via **mise-en-place**.
   - `cargo fmt -- --check`
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 
+> [!IMPORTANT]
+> **Always run full checks**: You MUST run `cargo test` and `cargo clippy` after making ANY code changes to ensure no warnings or errors were introduced. Do not skip this step.
+
 ### Testing Guidelines
 
 - **Unit:** Inside crates.

@@ -247,16 +247,18 @@ fn handle_log_view_key(state: &mut UiState, key: KeyEvent, _style: KeymapStyle) 
             modifiers: KeyModifiers::NONE,
             ..
         } => {
-            state.log_view.selection = None;
-            UiActionResult::handled(scroll_log_view_page(state, -1))
+            let page_size = state.log_view.pane.page_size.max(1) as i32;
+            update_log_selection(state, -page_size, extend_selection);
+            UiActionResult::handled(true)
         }
         KeyEvent {
             code: KeyCode::PageDown,
             modifiers: KeyModifiers::NONE,
             ..
         } => {
-            state.log_view.selection = None;
-            UiActionResult::handled(scroll_log_view_page(state, 1))
+            let page_size = state.log_view.pane.page_size.max(1) as i32;
+            update_log_selection(state, page_size, extend_selection);
+            UiActionResult::handled(true)
         }
         KeyEvent {
             code: KeyCode::Left,
@@ -723,11 +725,6 @@ fn scroll_horizontal(state: &mut UiState, delta: i32) -> bool {
     true
 }
 
-fn scroll_log_view_page(state: &mut UiState, direction: i32) -> bool {
-    let page = state.log_view.pane.page_size.max(1) as i32;
-    scroll_log_view_by(state, direction * page)
-}
-
 fn scroll_log_horizontal(state: &mut UiState, delta: i32) -> bool {
     if state.logs.is_empty() {
         return false;
@@ -739,20 +736,6 @@ fn scroll_log_horizontal(state: &mut UiState, delta: i32) -> bool {
         return false;
     }
     state.log_view.pane.scroll_horizontal = next;
-    true
-}
-
-fn scroll_log_view_by(state: &mut UiState, delta: i32) -> bool {
-    if state.logs.is_empty() {
-        return false;
-    }
-    let max_scroll = log_view_max_scroll(state) as i32;
-    let current = state.log_view.pane.scroll_vertical as i32;
-    let next = (current + delta).clamp(0, max_scroll) as usize;
-    if next == state.log_view.pane.scroll_vertical {
-        return false;
-    }
-    state.log_view.pane.scroll_vertical = next;
     true
 }
 
@@ -1247,19 +1230,28 @@ mod tests {
         assert_eq!(state.log_view.pane.scroll_vertical, 0);
         assert_eq!(state.log_view.selection, Some((1, 1)));
 
+        // PageDown moves selection down by page_size (2 in this test)
+        // 1 + 2 = 3
         let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
+        assert_eq!(state.log_view.selection, Some((3, 3)));
+        // ensure_log_selection_visible will scroll if needed.
+        // With page_size 2, and selection at 3, scroll should be 3 + 1 - 2 = 2.
         assert_eq!(state.log_view.pane.scroll_vertical, 2);
 
+        // PageUp moves selection up by page_size (2)
+        // 3 - 2 = 1
         let _ = handle_ui_key(
             &mut state,
             KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
             KeymapStyle::Vscode,
         );
-        assert_eq!(state.log_view.pane.scroll_vertical, 0);
+        assert_eq!(state.log_view.selection, Some((1, 1)));
+        // Selection at 1. Scroll should be 1.
+        assert_eq!(state.log_view.pane.scroll_vertical, 1);
     }
 
     #[test]
@@ -1438,6 +1430,27 @@ mod tests {
             KeymapStyle::Vscode,
         );
         assert_eq!(state.log_view.selection, Some((2, 2)));
+
+        // Page Up
+        // Page size is 8 by default. Selection at 2. 2 - 8 = -6 -> clamped to 0.
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((0, 0)));
+
+        // Page Down
+        // Selection at 0. 0 + 8 = 8. Clamped to max index 2.
+        let _ = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(state.log_view.selection, Some((2, 2)));
+
+        // Reset for next test part
+        state.log_view.selection = Some((2, 2));
 
         // Move Down at end (clamp)
         let _ = handle_ui_key(

@@ -430,6 +430,25 @@ pub fn log_view_max_horizontal_scroll(state: &UiState) -> usize {
         .max_horizontal_scroll(metrics, PaneConfig::log_pane())
 }
 
+pub fn ensure_log_selection_visible(state: &mut UiState) {
+    if let Some((start, end)) = state.log_view.selection {
+        let page_size = state.log_view.pane.page_size.max(1);
+        let scroll = state.log_view.pane.scroll_vertical;
+
+        // If selection is below viewport, scroll down
+        if end >= scroll + page_size {
+            state.log_view.pane.scroll_vertical = end + 1 - page_size;
+        }
+        // If selection is above viewport, scroll up
+        // Note: We check 'end < scroll' because if valid selection range is fully above,
+        // we want to bring it into view. 'start' is usually <= 'end'.
+        // To be safe, let's ensure 'start' is visible if we are scrolling up.
+        if start < scroll {
+            state.log_view.pane.scroll_vertical = start;
+        }
+    }
+}
+
 pub fn message_max_scroll(state: &UiState) -> usize {
     let metrics = PaneMetrics {
         line_count: message_total_lines(&state.messages),

@@ -8,5 +8,5 @@
 6. [ ] Jan-24, 2026 - Log window should show keyboard commands at the bottom, like the main windows.
 7. [ ] Jan-24, 2026 - Log window should have a filter function.
 8. [ ] Jan-24, 2026 - Log window is not starting with the last line.
-9. [ ] Jan-24, 2026 - Log window should select the whole wrapped line.
-10. [ ] Jan-24, 2026 - Logs are not being written to log files.
+9. [x] Jan-24, 2026 - Log window moving selection with PageUp/PageDown.
+10. [x] Jan-24, 2026 - Logs are not being written to log files.
