@@ -23,9 +23,9 @@ use ui::input::InputState;
 use ui::interaction::{handle_ui_key, KeymapStyle, UiAction};
 use ui::view::{
     chat_list_text_area, clamp_chat_list_scroll, composer_text_area,
-    ensure_chat_list_selection_visible, log_view_max_horizontal_scroll, log_view_max_scroll,
-    log_window_text_area, message_max_horizontal_scroll, message_viewport_page_size,
-    message_viewport_width, UiFocus, UiState,
+    ensure_chat_list_selection_visible, log_pane_metrics, log_view_max_horizontal_scroll,
+    log_view_max_scroll, log_window_text_area, message_max_horizontal_scroll,
+    message_viewport_page_size, message_viewport_width, UiFocus, UiState,
 };
 
 use crate::command::UiCommand;
@@ -238,6 +238,33 @@ fn handle_ui_action(
         UiAction::SelectAllInView => {
             ui::interaction::select_all_in_view(&mut ui_bridge.state);
         }
+        UiAction::CopyLogSelection => {
+            if let Some(text) = ui::view::get_selected_log_text(&ui_bridge.state) {
+                match arboard::Clipboard::new() {
+                    Ok(mut clipboard) => {
+                        if let Err(err) = clipboard.set_text(text) {
+                            let _ = ui_command_tx.send(UiCommand::ShowNotification(format!(
+                                "Clipboard error: {}",
+                                err
+                            )));
+                        } else {
+                            let _ = ui_command_tx.send(UiCommand::ShowNotification(
+                                "Copied to clipboard".to_string(),
+                            ));
+                        }
+                    }
+                    Err(err) => {
+                        let _ = ui_command_tx.send(UiCommand::ShowNotification(format!(
+                            "Clipboard init error: {}",
+                            err
+                        )));
+                    }
+                }
+            } else {
+                let _ =
+                    ui_command_tx.send(UiCommand::ShowNotification("No logs selected".to_string()));
+            }
+        }
     }
 }
 
@@ -441,6 +468,19 @@ fn maybe_refresh_logs(
     if was_at_bottom || state.log_view.pane.scroll_vertical > max_scroll {
         state.log_view.pane.scroll_vertical = max_scroll;
     }
+
+    // Handle sticky scroll (auto-tail on open)
+    if state.log_view.sticky_scroll && !state.logs.is_empty() {
+        let width = (state.log_view.pane.viewport.width as usize).max(1);
+        let metrics = log_pane_metrics(state, width);
+        if metrics.line_count > 0 {
+            let last_idx = metrics.line_count - 1;
+            state.log_view.selection = Some((last_idx, last_idx));
+            state.log_view.pane.scroll_vertical = max_scroll;
+            state.log_view.sticky_scroll = false;
+        }
+    }
+
     *last_refresh = Some(now);
 }
 
@@ -616,6 +656,7 @@ mod tests {
             logs: vec!["old".to_string()],
             log_view: LogViewState {
                 is_open: true,
+                selection: None,
                 ..LogViewState::default()
             },
             ..UiState::default()

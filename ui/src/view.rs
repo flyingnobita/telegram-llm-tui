@@ -8,9 +8,11 @@ use ratatui::{
     Frame,
 };
 
+use textwrap::Options;
+
 use crate::input::InputState;
 use crate::pane::{
-    pane_layout, render_pane, render_scrollbars, PaneConfig, PaneMetrics, PaneState,
+    pane_layout, render_pane, render_scrollbars, PaneConfig, PaneMetrics, PaneState, PaneViewport,
 };
 
 const DEFAULT_CHAT_LIST_WIDTH: u16 = 32;
@@ -197,6 +199,8 @@ pub struct CommandPaletteState {
 pub struct LogViewState {
     pub is_open: bool,
     pub pane: PaneState,
+    pub selection: Option<(usize, usize)>, // (anchor, cursor)
+    pub sticky_scroll: bool,
 }
 
 impl Default for LogViewState {
@@ -208,6 +212,8 @@ impl Default for LogViewState {
         Self {
             is_open: false,
             pane,
+            selection: None,
+            sticky_scroll: false,
         }
     }
 }
@@ -261,6 +267,45 @@ struct LayoutAreas {
     messages: Rect,
     composer: Rect,
     key_hints: Rect,
+}
+
+pub fn update_layout(state: &mut UiState, area: Rect) {
+    let layout = layout_areas(area, state.chat_list_width);
+
+    // Update Chat List Pane
+    let chat_block = Block::default().borders(Borders::ALL);
+    let chat_layout = pane_layout(layout.chat_list, &chat_block, PaneConfig::chat_list_pane());
+    state.chat_list_pane.set_viewport(
+        PaneViewport::from_rect(chat_layout.text_area),
+        chat_layout.text_area.height as usize,
+    );
+
+    // Update Message Pane
+    let msg_block = Block::default().borders(Borders::ALL);
+    let msg_layout = pane_layout(layout.messages, &msg_block, PaneConfig::message_pane());
+    state.message_view.pane.set_viewport(
+        PaneViewport::from_rect(msg_layout.text_area),
+        msg_layout.text_area.height as usize,
+    );
+
+    // Update Composer Pane
+    let comp_block = Block::default().borders(Borders::ALL);
+    let comp_layout = pane_layout(layout.composer, &comp_block, PaneConfig::composer_pane());
+    state.composer_pane.set_viewport(
+        PaneViewport::from_rect(comp_layout.text_area),
+        comp_layout.text_area.height as usize,
+    );
+
+    // Update Log Window Pane
+    if state.log_view.is_open {
+        let log_area = log_window_area(area);
+        let log_block = Block::default().borders(Borders::ALL);
+        let log_layout = pane_layout(log_area, &log_block, PaneConfig::log_pane());
+        state.log_view.pane.set_viewport(
+            PaneViewport::from_rect(log_layout.text_area),
+            log_layout.text_area.height as usize,
+        );
+    }
 }
 
 fn layout_areas(area: Rect, chat_list_width: u16) -> LayoutAreas {
@@ -366,7 +411,9 @@ pub fn ensure_chat_list_selection_visible(state: &mut UiState) {
 }
 
 pub fn log_view_max_scroll(state: &UiState) -> usize {
-    let metrics = log_pane_metrics(state);
+    let width = (state.log_view.pane.viewport.width as usize).max(1);
+    let effective_width = if width < 10 { 80 } else { width };
+    let metrics = log_pane_metrics(state, effective_width);
     state
         .log_view
         .pane
@@ -374,7 +421,9 @@ pub fn log_view_max_scroll(state: &UiState) -> usize {
 }
 
 pub fn log_view_max_horizontal_scroll(state: &UiState) -> usize {
-    let metrics = log_pane_metrics(state);
+    let width = (state.log_view.pane.viewport.width as usize).max(1);
+    let effective_width = if width < 10 { 80 } else { width };
+    let metrics = log_pane_metrics(state, effective_width);
     state
         .log_view
         .pane
@@ -668,30 +717,76 @@ fn message_max_line_width(state: &UiState) -> usize {
     message_max_line_width_for(&state.messages)
 }
 
-fn log_pane_content(state: &UiState) -> PaneContent {
-    let lines = if state.logs.is_empty() {
-        vec!["No logs".to_string()]
-    } else {
-        state.logs.clone()
+fn log_pane_content(state: &UiState, width: usize) -> (Vec<String>, PaneMetrics) {
+    if state.logs.is_empty() {
+        return (
+            vec!["No logs".to_string()],
+            PaneMetrics::from_text("No logs"),
+        );
+    }
+
+    let width = width.max(1);
+    let options = Options::new(width).break_words(true);
+    let mut wrapped_lines = Vec::new();
+
+    for log in &state.logs {
+        let lines = textwrap::wrap(log, &options);
+        for line in lines {
+            wrapped_lines.push(line.into_owned());
+        }
+    }
+
+    if wrapped_lines.is_empty() {
+        // Should not happen if logs not empty, but safety check
+        wrapped_lines.push(String::new());
+    }
+
+    let metrics = PaneMetrics {
+        line_count: wrapped_lines.len(),
+        max_line_width: width, // Since we wrapped to width
     };
-    let metrics = log_pane_metrics(state);
-    PaneContent {
-        text: lines.join("\n"),
-        metrics,
+
+    (wrapped_lines, metrics)
+}
+
+pub fn get_selected_log_text(state: &UiState) -> Option<String> {
+    let (anchor, cursor) = state.log_view.selection?;
+    let width = (state.log_view.pane.viewport.width as usize).max(1);
+    let effective_width = if width < 10 { 80 } else { width };
+    let (lines, _) = log_pane_content(state, effective_width);
+
+    let min = anchor.min(cursor);
+    let max = anchor.max(cursor);
+
+    let selected_lines: Vec<&str> = lines
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i >= min && *i <= max)
+        .map(|(_, line)| line.as_str())
+        .collect();
+
+    if selected_lines.is_empty() {
+        None
+    } else {
+        Some(selected_lines.join("\n"))
     }
 }
 
-fn log_pane_metrics(state: &UiState) -> PaneMetrics {
+pub fn log_pane_metrics(state: &UiState, width: usize) -> PaneMetrics {
     if state.logs.is_empty() {
         return PaneMetrics::from_text("No logs");
     }
-    let mut max_line_width = 0;
-    for line in &state.logs {
-        max_line_width = max_line_width.max(line.chars().count());
+    let width = width.max(1);
+    let options = Options::new(width).break_words(true);
+    let mut line_count = 0;
+
+    for log in &state.logs {
+        line_count += textwrap::wrap(log, &options).len();
     }
+
     PaneMetrics {
-        line_count: state.logs.len(),
-        max_line_width,
+        line_count,
+        max_line_width: width,
     }
 }
 
@@ -699,21 +794,62 @@ fn draw_log_window(frame: &mut Frame, state: &UiState, area: Rect) {
     let log_area = log_window_area(area);
     frame.render_widget(Clear, log_area);
 
-    let log_content = log_pane_content(state);
+    let block_inner_width = log_area.width.saturating_sub(2).max(1) as usize;
+    let (wrapped_lines, metrics) = log_pane_content(state, block_inner_width);
+
+    let mut styled_lines = Vec::new();
+    let selection_range = state.log_view.selection.map(|(anchor, cursor)| {
+        let min = anchor.min(cursor);
+        let max = anchor.max(cursor);
+        (min, max)
+    });
+
+    for (idx, line) in wrapped_lines.iter().enumerate() {
+        let is_selected = if let Some((min, max)) = selection_range {
+            idx >= min && idx <= max
+        } else {
+            false
+        };
+
+        if is_selected {
+            styled_lines.push(Line::styled(
+                line.clone(),
+                Style::default().add_modifier(Modifier::REVERSED),
+            ));
+        } else {
+            styled_lines.push(Line::from(line.clone()));
+        }
+    }
+
     let log_block = Block::default()
         .title("Logs")
         .borders(Borders::ALL)
         .border_style(focus_border_style(true));
+
     render_pane(
         frame,
         log_area,
         log_block,
-        log_content.text.as_str(),
+        ratatui::text::Text::from(styled_lines),
         &state.log_view.pane,
-        log_content.metrics,
+        metrics,
         PaneConfig::log_pane(),
     );
 }
+
+// Helper for calculating area if not defined (it was referenced in tui.rs imports but not found in viewed code?
+// Ah wait, tui.rs imported log_window_text_area, not log_window_area?
+// view.rs view output check:
+// Line 697: let log_area = log_window_area(area);
+// I need to ensure log_window_area exists or is defined.
+// Looking at previous view_file output...
+// It was not shown in the first 800 lines? or I missed it?
+// Let's assume it exists or I need to find it.
+// Wait, I saw `draw_log_window` use it.
+// Ah, `log_window_area` is NOT in the shown lines (1-800).
+// It must be further down.
+// I will not replace it if I can't confirm it exists, but I am replacing `draw_log_window` which CALLS it.
+// So I should just keep calling it.
 
 fn draw_draft_modal(frame: &mut Frame, state: &UiState, area: Rect) {
     let modal_area = centered_rect(area, 70, 60);

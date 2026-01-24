@@ -1,5 +1,6 @@
 use ratatui::{
     layout::Rect,
+    text::Text,
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
@@ -61,6 +62,7 @@ pub struct PaneConfig {
     pub enable_horizontal_scroll: bool,
     pub show_vertical_scrollbar: bool,
     pub show_horizontal_scrollbar: bool,
+    pub enable_wrap: bool,
 }
 
 impl PaneConfig {
@@ -70,6 +72,7 @@ impl PaneConfig {
             enable_horizontal_scroll: true,
             show_vertical_scrollbar: true,
             show_horizontal_scrollbar: true,
+            enable_wrap: false,
         }
     }
 
@@ -79,6 +82,7 @@ impl PaneConfig {
             enable_horizontal_scroll: true,
             show_vertical_scrollbar: true,
             show_horizontal_scrollbar: true,
+            enable_wrap: false,
         }
     }
 
@@ -88,15 +92,17 @@ impl PaneConfig {
             enable_horizontal_scroll: false,
             show_vertical_scrollbar: false,
             show_horizontal_scrollbar: false,
+            enable_wrap: false,
         }
     }
 
     pub fn log_pane() -> Self {
         Self {
             enable_vertical_scroll: true,
-            enable_horizontal_scroll: true,
+            enable_horizontal_scroll: false,
             show_vertical_scrollbar: true,
-            show_horizontal_scrollbar: true,
+            show_horizontal_scrollbar: false,
+            enable_wrap: true,
         }
     }
 }
@@ -236,11 +242,11 @@ pub fn pane_layout(area: Rect, block: &Block, config: PaneConfig) -> PaneLayout 
     }
 }
 
-pub fn render_pane(
+pub fn render_pane<'a>(
     frame: &mut Frame,
     area: Rect,
-    block: Block,
-    text: &str,
+    block: Block<'a>,
+    text: impl Into<Text<'a>>,
     state: &PaneState,
     metrics: PaneMetrics,
     config: PaneConfig,
@@ -300,6 +306,7 @@ mod tests {
         };
         let config = PaneConfig {
             enable_vertical_scroll: true,
+            enable_wrap: false,
             ..PaneConfig::default()
         };
 
@@ -394,6 +401,7 @@ mod tests {
         let config = PaneConfig {
             enable_vertical_scroll: true,
             enable_horizontal_scroll: true,
+            enable_wrap: false,
             ..PaneConfig::default()
         };
 
@@ -456,6 +464,7 @@ mod tests {
             enable_horizontal_scroll: true,
             show_vertical_scrollbar: false,
             show_horizontal_scrollbar: false,
+            enable_wrap: false,
         };
         let layout = pane_layout(area, &block, config);
         assert!(layout.vertical_scrollbar.is_none());

@@ -1,5 +1,6 @@
 ---
 source: ui/src/test_harness.rs
+assertion_line: 182
 expression: rendered
 ---
 ┌Chats─────────────────────────┐┌Messages (search: draft)──────────────────────┐
@@ -15,10 +16,10 @@ expression: rendered
 │   │                                                                     █│  █│
 │   │                                                                     █│  █│
 │   │                                                                     █│  ║│
-│   │                                                                     ║│  ▼│
+│   │                                                                     █│  ▼│
 │◄██│                                                                     ║│═► │
 └───│                                                                     ║│───┘
-┌Com│                                                                     ▼│───┐
-│dra│◄███████████████████████████████████████════════════════════════════► │   │
+┌Com│                                                                     ║│───┐
+│dra│                                                                     ▼│   │
 └───└──────────────────────────────────────────────────────────────────────┘───┘
  j/k  Scroll  |  Space  Select  |  /  Search  |  i  Composer  |  Ctrl+e  Export
