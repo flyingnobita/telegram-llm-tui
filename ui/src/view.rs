@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use ratatui::text::{Line, Span};
+use ratatui::text::{Line, Span, Text};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -952,11 +952,55 @@ fn draw_llm_window(frame: &mut Frame, state: &UiState, area: Rect) {
             .collect::<Vec<_>>(),
     );
 
+    let styled_history = if state.llm_window.history.is_empty() {
+        Text::from("Type your instruction below...")
+    } else {
+        let mut text_lines = Vec::new();
+        for (i, msg) in state.llm_window.history.iter().enumerate() {
+            if i > 0 {
+                text_lines.push(Line::default());
+            }
+
+            let author_style = match msg.author.as_str() {
+                "User" => Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+                "AI" => Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+                _ => Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            };
+
+            // First line with Author: Text (start)
+            let body_lines: Vec<&str> = msg.text.lines().collect();
+            if let Some(first_line) = body_lines.first() {
+                text_lines.push(Line::from(vec![
+                    Span::styled(format!("{}: ", msg.author), author_style),
+                    Span::raw(*first_line),
+                ]));
+
+                // Subsequent lines
+                for body_line in body_lines.iter().skip(1) {
+                    text_lines.push(Line::from(Span::raw(*body_line)));
+                }
+            } else {
+                // Empty body case
+                text_lines.push(Line::from(Span::styled(
+                    format!("{}: ", msg.author),
+                    author_style,
+                )));
+            }
+        }
+        Text::from(text_lines)
+    };
+
     render_pane(
         frame,
         history_area,
         history_block,
-        history_text.as_str(),
+        styled_history,
         &state.llm_window.history_pane,
         history_metrics,
         PaneConfig::default(), // Use default config for now or verify if we need specific one

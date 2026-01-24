@@ -1,5 +1,7 @@
 # Changes
 
+- Jan-24, 2026 - 10:45 PM +0800 - Implemented visual distinction in the conversation panel
+  by applying Cyan/Green colors to User/AI message headers respectively.
 - Jan-24, 2026 - 10:00 PM +0800 - Fixed CI test failure by skipping clipboard verification
   integration tests when running in CI environments.
 - Jan-24, 2026 - 09:26 PM +0800 - Fixed CI/Local hook discrepancy by
