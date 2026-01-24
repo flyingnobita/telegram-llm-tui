@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+
+echo "Running pre-push checks..."
+
+# Run tests
+echo "Running tests..."
+cargo test --workspace
+
+echo "All checks passed!"

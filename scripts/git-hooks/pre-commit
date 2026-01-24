@@ -9,7 +9,7 @@ cargo fmt -- --check
 
 # Check clippy
 echo "Running clippy..."
-cargo clippy -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Run tests
 echo "Running tests..."
