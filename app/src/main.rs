@@ -21,7 +21,7 @@ use telegram_llm_core::telegram::{
     DomainEvent, QrLoginResult, SqliteCacheStore, TelegramBootstrap, TelegramClient,
     TelegramConfig, UserId,
 };
-use time::{format_description, UtcOffset};
+use time::{format_description, OffsetDateTime, UtcOffset};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 use tracing_subscriber::layer::SubscriberExt;
@@ -305,6 +305,27 @@ fn init_tracing(config: &AppConfig) -> Result<ConsoleLogGate, Box<dyn std::error
     ensure_parent_dir(&config.log_file_path)?;
     ensure_parent_dir(&config.error_log_path)?;
 
+    // Initialize dedicated LLM transcript log
+    let offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
+    let now = OffsetDateTime::now_utc().to_offset(offset);
+    let time_fmt =
+        format_description::parse("[year]-[month]-[day]-[hour]-[minute]-[second]").unwrap();
+    let timestamp = now.format(&time_fmt).unwrap();
+    let llm_filename = format!("{}-llm-transcripts.log", timestamp);
+    let llm_full_filename = format!("{}-llm-transcripts-full.log", timestamp);
+
+    let log_dir = config.log_file_path.parent().unwrap_or(Path::new("."));
+    let llm_log_dir = log_dir.join("llm");
+    ensure_parent_dir(&llm_log_dir.join("dummy"))?;
+
+    let llm_log_path = llm_log_dir.join(&llm_filename);
+    let llm_file = std::fs::File::create(&llm_log_path)?;
+    let llm_shared_writer = SharedWriter::new(Box::new(llm_file));
+
+    let llm_full_log_path = llm_log_dir.join(&llm_full_filename);
+    let llm_full_file = std::fs::File::create(&llm_full_log_path)?;
+    let llm_full_shared_writer = SharedWriter::new(Box::new(llm_full_file));
+
     let log_writer = build_log_writer(
         &config.log_file_path,
         config.log_rotation,
@@ -326,6 +347,9 @@ fn init_tracing(config: &AppConfig) -> Result<ConsoleLogGate, Box<dyn std::error
             let stdout_timer = build_timer();
             let file_timer = build_timer();
             let error_timer = build_timer();
+            let llm_timer = build_timer();
+            let llm_full_timer = build_timer();
+
             let stdout_layer = tracing_subscriber::fmt::layer()
                 .compact()
                 .with_writer(console_gate.make_writer())
@@ -344,11 +368,31 @@ fn init_tracing(config: &AppConfig) -> Result<ConsoleLogGate, Box<dyn std::error
                 .with_ansi(false)
                 .with_timer(error_timer)
                 .with_filter(tracing_subscriber::filter::LevelFilter::ERROR);
+            let llm_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_writer(llm_shared_writer)
+                .with_ansi(false)
+                .with_timer(llm_timer)
+                .with_target(false)
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.target() == "llm_transcript"
+                }));
+            let llm_full_layer = tracing_subscriber::fmt::layer()
+                .compact()
+                .with_writer(llm_full_shared_writer)
+                .with_ansi(false)
+                .with_timer(llm_full_timer)
+                .with_target(false)
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.target() == "llm_transcript_full"
+                }));
 
             tracing_subscriber::registry()
                 .with(stdout_layer)
                 .with(file_layer)
                 .with(error_layer)
+                .with(llm_layer)
+                .with(llm_full_layer)
                 .init();
         }
     }

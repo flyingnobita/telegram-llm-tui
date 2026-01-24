@@ -2,6 +2,7 @@ use crate::{LlmError, LlmProvider, LlmRequest, LlmResponse};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::json;
+use tracing::info;
 
 pub struct OpenAiProvider {
     client: Client,
@@ -32,6 +33,8 @@ impl OpenAiProvider {
 #[async_trait]
 impl LlmProvider for OpenAiProvider {
     async fn generate_draft(&self, request: LlmRequest) -> Result<LlmResponse, LlmError> {
+        info!(target: "llm_transcript", "User: {}", request.user_prompt);
+
         let url = format!("{}/chat/completions", self.base_url);
 
         let body = json!({
@@ -47,6 +50,10 @@ impl LlmProvider for OpenAiProvider {
                 }
             ]
         });
+
+        if let Ok(body_str) = serde_json::to_string_pretty(&body) {
+            info!(target: "llm_transcript_full", "User Instruction:\n{}\n\nFull JSON Request:\n{}", request.user_prompt, body_str);
+        }
 
         let response = self
             .client
@@ -83,6 +90,9 @@ impl LlmProvider for OpenAiProvider {
                 ))
             })?
             .to_string();
+
+        info!(target: "llm_transcript", "Provider: {}", text);
+        info!(target: "llm_transcript_full", "Provider: {}", text);
 
         Ok(LlmResponse { text })
     }

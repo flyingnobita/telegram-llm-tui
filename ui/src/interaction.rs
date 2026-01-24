@@ -23,6 +23,9 @@ pub enum UiAction {
     CommandPaletteSubmit,
     SelectAllInView,
     CopyLogSelection,
+    OpenLlmWindow,
+    LlmWindowSubmit,
+    CloseLlmWindow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +57,10 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
 
     if state.command_palette.is_open {
         return handle_command_palette_key(state, key);
+    }
+
+    if state.llm_window.is_open {
+        return handle_llm_window_key(state, key);
     }
 
     if key.code == KeyCode::Char('l') && key.modifiers == KeyModifiers::CONTROL {
@@ -109,7 +116,7 @@ pub fn handle_ui_key(state: &mut UiState, key: KeyEvent, style: KeymapStyle) -> 
             return UiActionResult::handled(true);
         }
         KeyCode::Char('e') if key.modifiers == KeyModifiers::CONTROL => {
-            return UiActionResult::action(UiAction::ExportSelected);
+            return UiActionResult::action(UiAction::OpenLlmWindow);
         }
         _ => {}
     }
@@ -315,6 +322,93 @@ fn handle_log_view_key(state: &mut UiState, key: KeyEvent, _style: KeymapStyle) 
             UiActionResult::handled(true)
         }
         _ => UiActionResult::handled(false),
+    }
+}
+
+fn handle_llm_window_key(state: &mut UiState, key: KeyEvent) -> UiActionResult {
+    match key {
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.llm_window.is_open = false;
+            // Clear input on close? Maybe keep it as draft?
+            UiActionResult::action(UiAction::CloseLlmWindow)
+        }
+        KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            if !state.llm_window.input.text.trim().is_empty() {
+                UiActionResult::action(UiAction::LlmWindowSubmit)
+            } else {
+                UiActionResult::handled(true)
+            }
+        }
+        KeyEvent {
+            code: KeyCode::Enter,
+            modifiers: KeyModifiers::SHIFT,
+            ..
+        } => {
+            state
+                .llm_window
+                .input
+                .text
+                .insert(state.llm_window.input.cursor, '\n');
+            state.llm_window.input.cursor += 1;
+            UiActionResult::handled(true)
+        }
+        KeyEvent {
+            code: KeyCode::Tab,
+            modifiers: KeyModifiers::NONE,
+            ..
+        } => {
+            state.llm_window.focus_input = !state.llm_window.focus_input;
+            UiActionResult::handled(true)
+        }
+        _ => {
+            if state.llm_window.focus_input {
+                // Handle input
+                let handled = handle_text_key(&mut state.llm_window.input, key);
+                // Also handle up/down for history scrolling if we added that, but for now simple input
+                UiActionResult::handled(handled)
+            } else {
+                // Handle scrolling transcript
+                let page_size = state.llm_window.transcript_pane.page_size.max(1) as i32;
+                match key.code {
+                    KeyCode::Up => {
+                        state.llm_window.transcript_pane.scroll_vertical = state
+                            .llm_window
+                            .transcript_pane
+                            .scroll_vertical
+                            .saturating_sub(1);
+                        UiActionResult::handled(true)
+                    }
+                    KeyCode::Down => {
+                        // Need max scroll calculation if we want to clamp correctly, but let's just increment for now
+                        // Ideally we use PaneState methods but we need metrics.
+                        // For MVP just let it scroll.
+                        state.llm_window.transcript_pane.scroll_vertical += 1;
+                        UiActionResult::handled(true)
+                    }
+                    KeyCode::PageUp => {
+                        state.llm_window.transcript_pane.scroll_vertical = state
+                            .llm_window
+                            .transcript_pane
+                            .scroll_vertical
+                            .saturating_sub(page_size as usize);
+                        UiActionResult::handled(true)
+                    }
+                    KeyCode::PageDown => {
+                        state.llm_window.transcript_pane.scroll_vertical += page_size as usize;
+                        UiActionResult::handled(true)
+                    }
+                    _ => UiActionResult::handled(false),
+                }
+            }
+        }
     }
 }
 

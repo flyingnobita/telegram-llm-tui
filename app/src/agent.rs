@@ -104,6 +104,12 @@ async fn run_draft_reply_scenario(
                         return Err("Empty draft".into());
                     }
                 }
+                UiCommand::LlmResponse(response) => {
+                    info!("[AGENT] Received LLM Response: {}", response);
+                    // For test scenario, receiving a response is success
+                    println!("[AGENT-TEST] STATUS: OK");
+                    return Ok(());
+                }
             },
             Ok(None) => {
                 error!("[AGENT] Channel closed without result");

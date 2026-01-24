@@ -249,14 +249,22 @@ fn handle_ui_action(
             ui_bridge.refresh(cache_manager);
         }
         UiAction::ExportSelected => {
-            // Default to Reply kit if direct keypress (shortcut)
-            crate::actions::handle_export_selected(
+            // Deprecated usage, but good to keep or remove.
+            // The interaction logic now maps Ctrl+E to OpenLlmWindow.
+        }
+        UiAction::OpenLlmWindow => {
+            crate::actions::handle_open_llm_window(ui_bridge, cache_manager);
+        }
+        UiAction::LlmWindowSubmit => {
+            crate::actions::handle_llm_submit(
                 ui_bridge,
-                cache_manager,
                 ui_command_tx,
                 llm_provider,
                 kits::get_default_kit(),
             );
+        }
+        UiAction::CloseLlmWindow => {
+            ui_bridge.state.llm_window.is_open = false;
         }
         UiAction::OpenCommandPalette => {
             handle_open_command_palette(ui_bridge);
@@ -356,6 +364,34 @@ fn handle_ui_command(command: UiCommand, ui_bridge: &mut UiCacheBridge) {
         }
         UiCommand::ShowNotification(text) => {
             ui_bridge.state.status_message = Some(text);
+        }
+        UiCommand::LlmResponse(text) => {
+            if let Some(last_msg) = ui_bridge.state.llm_window.history.last_mut() {
+                if last_msg.author == "AI" {
+                    last_msg.text.push_str(&text);
+                } else {
+                    // Should create new message if last was User?
+                    // Usually we create the AI message placeholder in handle_llm_submit
+                    // But if not, create here.
+                    ui_bridge
+                        .state
+                        .llm_window
+                        .history
+                        .push(ui::view::ChatMessage {
+                            author: "AI".to_string(),
+                            text,
+                        });
+                }
+            } else {
+                ui_bridge
+                    .state
+                    .llm_window
+                    .history
+                    .push(ui::view::ChatMessage {
+                        author: "AI".to_string(),
+                        text,
+                    });
+            }
         }
     }
 }

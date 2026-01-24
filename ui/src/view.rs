@@ -196,6 +196,37 @@ pub struct CommandPaletteState {
 }
 
 #[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub author: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LlmWindowState {
+    pub is_open: bool,
+    pub input: InputState,
+    pub history: Vec<ChatMessage>,
+    pub transcript: String,
+    pub history_pane: PaneState,
+    pub transcript_pane: PaneState,
+    pub focus_input: bool, // true if focus is on input/history, false if on transcript
+}
+
+impl Default for LlmWindowState {
+    fn default() -> Self {
+        Self {
+            is_open: false,
+            input: InputState::default(),
+            history: Vec::new(),
+            transcript: String::new(),
+            history_pane: PaneState::default(),
+            transcript_pane: PaneState::default(),
+            focus_input: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct LogViewState {
     pub is_open: bool,
     pub pane: PaneState,
@@ -230,6 +261,7 @@ pub struct UiState {
     pub command_palette: CommandPaletteState,
     pub logs: Vec<String>,
     pub log_view: LogViewState,
+    pub llm_window: LlmWindowState,
     pub chat_list_pane: PaneState,
     pub composer_pane: PaneState,
     pub chat_list_width: u16,
@@ -251,6 +283,7 @@ impl Default for UiState {
             command_palette: CommandPaletteState::default(),
             logs: Vec::new(),
             log_view: LogViewState::default(),
+            llm_window: LlmWindowState::default(),
             chat_list_pane: PaneState::default(),
             composer_pane: PaneState::default(),
             chat_list_width: DEFAULT_CHAT_LIST_WIDTH,
@@ -534,8 +567,10 @@ fn is_chat_focus(focus: UiFocus) -> bool {
 pub fn draw(frame: &mut Frame, state: &UiState) {
     let area = frame.size();
     let layout = layout_areas(area, state.chat_list_width);
-    let overlay_active =
-        state.draft_modal.is_open || state.command_palette.is_open || state.log_view.is_open;
+    let overlay_active = state.draft_modal.is_open
+        || state.command_palette.is_open
+        || state.log_view.is_open
+        || state.llm_window.is_open;
     let chat_focused = !overlay_active && is_chat_focus(state.focus);
     let message_focused = !overlay_active && is_message_focus(state.focus);
     let composer_focused = !overlay_active && state.focus == UiFocus::Composer;
@@ -632,6 +667,10 @@ pub fn draw(frame: &mut Frame, state: &UiState) {
 
     if state.log_view.is_open {
         draw_log_window(frame, state, area);
+    }
+
+    if state.llm_window.is_open {
+        draw_llm_window(frame, state, area);
     }
 }
 
@@ -853,6 +892,120 @@ fn draw_log_window(frame: &mut Frame, state: &UiState, area: Rect) {
         &state.log_view.pane,
         metrics,
         PaneConfig::log_pane(),
+    );
+}
+
+fn draw_llm_window(frame: &mut Frame, state: &UiState, area: Rect) {
+    let window_area = centered_rect(area, 80, 80);
+    frame.render_widget(Clear, window_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(50), // History + Input
+            Constraint::Percentage(50), // Transcript
+        ])
+        .split(window_area);
+
+    let top_area = chunks[0];
+    let bottom_area = chunks[1];
+
+    // Draw Top Area (Dialog)
+    let top_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(1),    // History
+            Constraint::Length(3), // Input
+        ])
+        .split(top_area);
+
+    let history_area = top_chunks[0];
+    let input_area = top_chunks[1];
+
+    let history_focused = state.llm_window.focus_input;
+    let transcript_focused = !state.llm_window.focus_input;
+
+    // --- Draw History ---
+    let history_block = Block::default()
+        .title("Conversation")
+        .borders(Borders::ALL)
+        .border_style(focus_border_style(history_focused));
+
+    // Simple render info for now:
+    let history_text: String = state
+        .llm_window
+        .history
+        .iter()
+        .map(|msg| format!("{}: {}", msg.author, msg.text))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let history_lines: Vec<&str> = if history_text.is_empty() {
+        vec!["Type your instruction below..."]
+    } else {
+        history_text.lines().collect()
+    };
+    let history_metrics = PaneMetrics::from_lines(
+        &history_lines
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>(),
+    );
+
+    render_pane(
+        frame,
+        history_area,
+        history_block,
+        history_text.as_str(),
+        &state.llm_window.history_pane,
+        history_metrics,
+        PaneConfig::default(), // Use default config for now or verify if we need specific one
+    );
+
+    // --- Draw Input ---
+    let input_block = Block::default()
+        .title("Input (Enter to Send, Shift+Enter for new line)")
+        .borders(Borders::ALL)
+        .border_style(focus_border_style(history_focused));
+
+    let mut input_text = state.llm_window.input.text.clone();
+    let cursor_pos = state.llm_window.input.cursor;
+    if history_focused {
+        // Only show cursor if focused
+        if cursor_pos <= input_text.len() {
+            input_text.insert(cursor_pos, '_');
+        } else {
+            input_text.push('_');
+        }
+    }
+
+    let input_p = Paragraph::new(input_text)
+        .wrap(Wrap { trim: false })
+        .block(input_block);
+    frame.render_widget(input_p, input_area);
+
+    // --- Draw Transcript ---
+    let transcript_block = Block::default()
+        .title("Context (Transcript)")
+        .borders(Borders::ALL)
+        .border_style(focus_border_style(transcript_focused));
+
+    let transcript_lines: Vec<String> = state
+        .llm_window
+        .transcript
+        .lines()
+        .map(|s| s.to_string())
+        .collect();
+    let transcript_metrics = PaneMetrics::from_lines(&transcript_lines);
+
+    render_pane(
+        frame,
+        bottom_area,
+        transcript_block,
+        state.llm_window.transcript.as_str(),
+        &state.llm_window.transcript_pane,
+        transcript_metrics,
+        PaneConfig::default(),
     );
 }
 
