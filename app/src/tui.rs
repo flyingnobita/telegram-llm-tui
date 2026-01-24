@@ -62,6 +62,20 @@ pub async fn run_tui_loop(
     let (ui_command_tx, mut ui_command_rx) = mpsc::unbounded_channel();
     let running = Arc::new(AtomicBool::new(true));
     let input_handle = spawn_input_thread(running.clone(), input_tx);
+    let (status_tx, mut status_rx) = mpsc::unbounded_channel();
+    let clipboard_tx = ui::clipboard::spawn_worker(Some(status_tx));
+
+    // Spawn adapter for clipboard status messages
+    let cmd_tx = ui_command_tx.clone();
+    tokio::spawn(async move {
+        while let Some(status) = status_rx.recv().await {
+            let msg = match status {
+                ui::clipboard::ClipboardResult::Success => "Copied to clipboard".to_string(),
+                ui::clipboard::ClipboardResult::Error(e) => e,
+            };
+            let _ = cmd_tx.send(UiCommand::ShowNotification(msg));
+        }
+    });
 
     let mut ticker = tokio::time::interval(Duration::from_millis(DRAW_INTERVAL_MS));
     let mut should_exit = false;
@@ -74,24 +88,25 @@ pub async fn run_tui_loop(
 
     loop {
         tokio::select! {
-            _ = ticker.tick() => {}
-            maybe_input = input_rx.recv() => {
-                if let Some(event) = maybe_input {
-                    if handle_input_event(
-                        event,
-                        ui_bridge,
-                        cache_manager,
-                        keymap,
-                        send_pipeline,
-                        ui_command_tx.clone(),
-                        llm_provider.clone(),
-                    ) {
-                        should_exit = true;
+                    _ = ticker.tick() => {}
+                    maybe_input = input_rx.recv() => {
+                        if let Some(event) = maybe_input {
+                            if handle_input_event(
+                                event,
+                                ui_bridge,
+                                cache_manager,
+                                keymap,
+                                send_pipeline,
+                                ui_command_tx.clone(),
+                                llm_provider.clone(),
+                                clipboard_tx.clone(),
+                            ) {
+                                should_exit = true;
+                            }
+                        } else {
+                            should_exit = true;
+                        }
                     }
-                } else {
-                    should_exit = true;
-                }
-            }
             event = event_rx.recv() => {
                 match event {
                     Ok(event) => {
@@ -135,7 +150,6 @@ pub async fn run_tui_loop(
             cursor_blink_on = !cursor_blink_on;
             last_cursor_blink = Instant::now();
         }
-        ui_bridge.state.composer_cursor_visible = cursor_blink_on;
         tui.draw(&ui_bridge.state)?;
         if should_exit {
             break;
@@ -147,6 +161,7 @@ pub async fn run_tui_loop(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_input_event(
     event: InputEvent,
     ui_bridge: &mut UiCacheBridge,
@@ -155,6 +170,7 @@ fn handle_input_event(
     send_pipeline: &SendPipeline,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
     llm_provider: Arc<dyn LlmProvider>,
+    clipboard_tx: std::sync::mpsc::Sender<String>,
 ) -> bool {
     match event {
         InputEvent::Key(key) => handle_key_event(
@@ -165,6 +181,7 @@ fn handle_input_event(
             send_pipeline,
             ui_command_tx,
             llm_provider,
+            clipboard_tx,
         ),
         InputEvent::Resize(width, height) => {
             apply_page_size(&mut ui_bridge.state, Rect::new(0, 0, width, height));
@@ -173,6 +190,7 @@ fn handle_input_event(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_key_event(
     key: KeyEvent,
     ui_bridge: &mut UiCacheBridge,
@@ -181,12 +199,21 @@ fn handle_key_event(
     send_pipeline: &SendPipeline,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
     llm_provider: Arc<dyn LlmProvider>,
+    clipboard_tx: std::sync::mpsc::Sender<String>,
 ) -> bool {
     if matches!(key.kind, KeyEventKind::Release) {
         return false;
     }
     if is_exit_key(&key) {
-        return true;
+        // Exception: If Log View is open, Ctrl+C copies instead of exiting
+        if key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+            && ui_bridge.state.log_view.is_open
+        {
+            // Do not exit, let handle_ui_key process it
+        } else {
+            return true;
+        }
     }
 
     let result = handle_ui_key(&mut ui_bridge.state, key, keymap);
@@ -201,6 +228,7 @@ fn handle_key_event(
             cache_manager,
             ui_command_tx,
             llm_provider,
+            clipboard_tx,
         );
     }
     false
@@ -213,6 +241,7 @@ fn handle_ui_action(
     cache_manager: &CacheManager,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
     llm_provider: Arc<dyn LlmProvider>,
+    clipboard_tx: std::sync::mpsc::Sender<String>,
 ) {
     match action {
         UiAction::ComposerSubmit => handle_composer_submit(ui_bridge, send_pipeline),
@@ -239,34 +268,25 @@ fn handle_ui_action(
             ui::interaction::select_all_in_view(&mut ui_bridge.state);
         }
         UiAction::CopyLogSelection => {
+            info!("UiAction::CopyLogSelection triggered");
             if let Some(text) = ui::view::get_selected_log_text(&ui_bridge.state) {
-                match arboard::Clipboard::new() {
-                    Ok(mut clipboard) => {
-                        if let Err(err) = clipboard.set_text(text) {
-                            let _ = ui_command_tx.send(UiCommand::ShowNotification(format!(
-                                "Clipboard error: {}",
-                                err
-                            )));
-                        } else {
-                            let _ = ui_command_tx.send(UiCommand::ShowNotification(
-                                "Copied to clipboard".to_string(),
-                            ));
-                        }
-                    }
-                    Err(err) => {
-                        let _ = ui_command_tx.send(UiCommand::ShowNotification(format!(
-                            "Clipboard init error: {}",
-                            err
-                        )));
-                    }
+                info!("Text extracted (len={}), sending to worker", text.len());
+                if let Err(e) = clipboard_tx.send(text) {
+                    let _ = ui_command_tx.send(UiCommand::ShowNotification(format!(
+                        "Clipboard worker dead: {}",
+                        e
+                    )));
                 }
             } else {
+                info!("No log text selected");
                 let _ =
                     ui_command_tx.send(UiCommand::ShowNotification("No logs selected".to_string()));
             }
         }
     }
 }
+
+// ... existing code ...
 
 fn handle_open_command_palette(ui_bridge: &mut UiCacheBridge) {
     ui_bridge.state.command_palette.is_open = true;

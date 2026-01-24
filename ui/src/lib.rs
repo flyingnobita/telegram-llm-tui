@@ -1,6 +1,7 @@
 //! TUI components and test harness.
 
 pub mod bridge;
+pub mod clipboard;
 pub mod input;
 pub mod interaction;
 pub mod pane;

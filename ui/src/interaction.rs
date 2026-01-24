@@ -290,6 +290,11 @@ fn handle_log_view_key(state: &mut UiState, key: KeyEvent, _style: KeymapStyle) 
             code: KeyCode::Char('C'),
             modifiers: KeyModifiers::SHIFT,
             ..
+        }
+        | KeyEvent {
+            code: KeyCode::Char('c'),
+            modifiers: KeyModifiers::CONTROL,
+            ..
         } => UiActionResult::action(UiAction::CopyLogSelection),
         KeyEvent {
             code: KeyCode::Char('k'),
@@ -1571,5 +1576,31 @@ mod tests {
             KeymapStyle::Vscode,
         );
         assert_eq!(state.log_view.selection, Some((2, 2)));
+    }
+    #[test]
+    fn log_view_c_key_triggers_copy_action() {
+        let mut state = UiState {
+            log_view: LogViewState {
+                is_open: true,
+                selection: Some((0, 1)),
+                ..LogViewState::default()
+            },
+            ..UiState::default()
+        };
+
+        let result = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(result.action, Some(UiAction::CopyLogSelection));
+
+        // Test with Shift+C
+        let result = handle_ui_key(
+            &mut state,
+            KeyEvent::new(KeyCode::Char('C'), KeyModifiers::SHIFT),
+            KeymapStyle::Vscode,
+        );
+        assert_eq!(result.action, Some(UiAction::CopyLogSelection));
     }
 }

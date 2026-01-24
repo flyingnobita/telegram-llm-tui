@@ -11,3 +11,5 @@ grammers-tl-types = "0.8.0"
 ui = { path = "../ui" }
 tokio = { version = "1", features = ["macros", "rt"] }
 tracing = "0.1"
+arboard = "3.3"
+uuid = { version = "1.7", features = ["v4"] }

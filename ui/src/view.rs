@@ -1116,4 +1116,38 @@ mod tests {
         let composer = key_hints_for_focus(UiFocus::Composer);
         assert!(composer.iter().any(|(k, _)| *k == "Esc"));
     }
+    #[test]
+    fn get_selected_log_text_extracts_correct_range() {
+        let mut state = UiState {
+            logs: vec![
+                "Log line 1".to_string(),
+                "Log line 2".to_string(),
+                "Log line 3".to_string(),
+            ],
+            log_view: LogViewState {
+                is_open: true,
+                selection: Some((0, 1)), // Select first two lines
+                ..LogViewState::default()
+            },
+            ..UiState::default()
+        };
+        // Set viewport width distinct from wrapping default to test behavior
+        state.log_view.pane.viewport.width = 100;
+
+        let selected = super::get_selected_log_text(&state);
+        assert_eq!(selected, Some("Log line 1\nLog line 2".to_string()));
+
+        // Test single line selection
+        state.log_view.selection = Some((1, 1));
+        let selected = super::get_selected_log_text(&state);
+        assert_eq!(selected, Some("Log line 2".to_string()));
+
+        // Test reverse selection (cursor < anchor)
+        state.log_view.selection = Some((2, 0));
+        let selected = super::get_selected_log_text(&state);
+        assert_eq!(
+            selected,
+            Some("Log line 1\nLog line 2\nLog line 3".to_string())
+        );
+    }
 }

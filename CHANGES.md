@@ -1,5 +1,8 @@
 # Changes
 
+- Jan-24, 2026 - 08:15 PM +0800 - Resolved clipboard copy issues on Linux
+  by implementing a prioritized CLI fallback (wl-copy/xclip/xsel), improving reliability
+  and preventing terminal interference.
 - Jan-24, 2026 - 04:40 PM +0800 - Fixed clippy warnings (unused import, redundant update, field assignment) in interaction UI.
 - Jan-24, 2026 - 01:10 AM +0800 - Fixed message timestamps to use local system
   timezone instead of UTC.
