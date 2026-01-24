@@ -54,6 +54,7 @@ pub async fn run_tui_loop(
     log_path: PathBuf,
     log_window_max_lines: usize,
     llm_provider: Arc<dyn LlmProvider>,
+    max_input_tokens: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("starting tui runtime");
     let _console_guard = ConsoleLogGuard::new(console_gate);
@@ -99,6 +100,7 @@ pub async fn run_tui_loop(
                                 send_pipeline,
                                 ui_command_tx.clone(),
                                 llm_provider.clone(),
+                                max_input_tokens,
                                 clipboard_tx.clone(),
                             ) {
                                 should_exit = true;
@@ -170,6 +172,7 @@ fn handle_input_event(
     send_pipeline: &SendPipeline,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
     llm_provider: Arc<dyn LlmProvider>,
+    max_input_tokens: usize,
     clipboard_tx: std::sync::mpsc::Sender<String>,
 ) -> bool {
     match event {
@@ -181,6 +184,7 @@ fn handle_input_event(
             send_pipeline,
             ui_command_tx,
             llm_provider,
+            max_input_tokens,
             clipboard_tx,
         ),
         InputEvent::Resize(width, height) => {
@@ -199,6 +203,7 @@ fn handle_key_event(
     send_pipeline: &SendPipeline,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
     llm_provider: Arc<dyn LlmProvider>,
+    max_input_tokens: usize,
     clipboard_tx: std::sync::mpsc::Sender<String>,
 ) -> bool {
     if matches!(key.kind, KeyEventKind::Release) {
@@ -228,12 +233,14 @@ fn handle_key_event(
             cache_manager,
             ui_command_tx,
             llm_provider,
+            max_input_tokens,
             clipboard_tx,
         );
     }
     false
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_ui_action(
     action: UiAction,
     ui_bridge: &mut UiCacheBridge,
@@ -241,6 +248,7 @@ fn handle_ui_action(
     cache_manager: &CacheManager,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
     llm_provider: Arc<dyn LlmProvider>,
+    max_input_tokens: usize,
     clipboard_tx: std::sync::mpsc::Sender<String>,
 ) {
     match action {
@@ -261,6 +269,7 @@ fn handle_ui_action(
                 ui_command_tx,
                 llm_provider,
                 kits::get_default_kit(),
+                max_input_tokens,
             );
         }
         UiAction::CloseLlmWindow => {
@@ -270,7 +279,13 @@ fn handle_ui_action(
             handle_open_command_palette(ui_bridge);
         }
         UiAction::CommandPaletteSubmit => {
-            handle_command_palette_submit(ui_bridge, cache_manager, ui_command_tx, llm_provider);
+            handle_command_palette_submit(
+                ui_bridge,
+                cache_manager,
+                ui_command_tx,
+                llm_provider,
+                max_input_tokens,
+            );
         }
         UiAction::SelectAllInView => {
             ui::interaction::select_all_in_view(&mut ui_bridge.state);
@@ -311,6 +326,7 @@ fn handle_command_palette_submit(
     cache_manager: &CacheManager,
     ui_command_tx: mpsc::UnboundedSender<UiCommand>,
     llm_provider: Arc<dyn LlmProvider>,
+    max_input_tokens: usize,
 ) {
     let selected = ui_bridge.state.command_palette.selected;
     let item = ui_bridge.state.command_palette.items.get(selected).cloned();
@@ -329,6 +345,7 @@ fn handle_command_palette_submit(
                     ui_command_tx,
                     llm_provider,
                     kit,
+                    max_input_tokens,
                 );
                 return;
             } else {
@@ -345,6 +362,7 @@ fn handle_command_palette_submit(
                     ui_command_tx,
                     llm_provider,
                     kits::get_default_kit(),
+                    max_input_tokens,
                 );
             }
             _ => {

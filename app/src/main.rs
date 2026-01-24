@@ -207,6 +207,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             &send_pipeline,
             llm_provider,
             scenario,
+            config.llm.max_input_tokens,
         )
         .await?;
 
@@ -226,6 +227,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
             config.log_file_path.clone(),
             config.log_window_max_lines,
             llm_provider,
+            config.llm.max_input_tokens,
         )
         .await?;
     }

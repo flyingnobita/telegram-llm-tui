@@ -37,6 +37,7 @@ const DEFAULT_LLM_ENABLED: bool = false;
 const DEFAULT_LLM_PROVIDER: &str = "mock";
 const DEFAULT_LM_STUDIO_BASE_URL: &str = "http://localhost:1234/v1";
 const DEFAULT_LM_STUDIO_MODEL: &str = "gpt-3.5-turbo";
+const DEFAULT_MAX_INPUT_TOKENS: usize = 16_384;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppConfig {
@@ -76,6 +77,7 @@ pub struct LlmConfig {
     pub provider: String,
     pub lm_studio: LmStudioConfig,
     pub openai: OpenAiConfig,
+    pub max_input_tokens: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,6 +181,7 @@ struct UiSection {
 struct LlmSection {
     enabled: Option<bool>,
     provider: Option<String>,
+    max_input_tokens: Option<usize>,
     lm_studio: Option<LmStudioSection>,
 }
 
@@ -446,6 +449,12 @@ impl AppConfig {
             .and_then(|lms| lms.model.clone())
             .unwrap_or_else(|| DEFAULT_LM_STUDIO_MODEL.to_string());
 
+        let llm_max_input_tokens = file_config
+            .as_ref()
+            .and_then(|config| config.llm.as_ref())
+            .and_then(|llm| llm.max_input_tokens)
+            .unwrap_or(DEFAULT_MAX_INPUT_TOKENS);
+
         let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
         let openai_model = std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
 
@@ -460,6 +469,7 @@ impl AppConfig {
                 api_key: openai_api_key,
                 model: openai_model,
             },
+            max_input_tokens: llm_max_input_tokens,
         };
 
         Ok(Self {

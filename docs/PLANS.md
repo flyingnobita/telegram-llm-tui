@@ -101,7 +101,7 @@ pipeline -> prompt kit -> safety.
        draft -> allow edit -> user explicitly sends.
 3. [x] (4.3) Prompt kit: summarize thread, propose reply, extract action
        items, sentiment or priority tagging; keep prompts versioned.
-4. [ ] (4.4) Safety: truncate or zip transcripts to fit token limits; redact
+4. [x] (4.4) Safety: truncate or zip transcripts to fit token limits; redact
        secrets before sending; avoid logging auth tokens; log prompts or responses
        for reproducibility (default on).
 5. [x] (4.5) LM Studio Support: Allow configuring a custom base URL for OpenAI-compatible

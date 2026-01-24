@@ -14,11 +14,15 @@ pub async fn run_agent_loop(
     send_pipeline: &SendPipeline,
     llm_provider: Arc<dyn LlmProvider>,
     scenario: String,
+    max_input_tokens: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!(scenario, "starting agent test mode");
 
     match scenario.as_str() {
-        "draft_reply" => run_draft_reply_scenario(cache_manager, ui_bridge, llm_provider).await?,
+        "draft_reply" => {
+            run_draft_reply_scenario(cache_manager, ui_bridge, llm_provider, max_input_tokens)
+                .await?
+        }
         "send_jan_greeting" => {
             integration_tests::test_scenarios::send_jan_greeting::run(
                 cache_manager,
@@ -40,6 +44,7 @@ async fn run_draft_reply_scenario(
     cache_manager: &CacheManager,
     ui_bridge: &mut UiCacheBridge,
     llm_provider: Arc<dyn LlmProvider>,
+    max_input_tokens: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Wait for dialogs and history background sync
     // In a real environment, we might want to poll for state changes, but for now a fixed sleep is "good enough" for MVP
@@ -86,6 +91,7 @@ async fn run_draft_reply_scenario(
         tx,
         llm_provider,
         llm::kits::get_default_kit(),
+        max_input_tokens,
     );
 
     // 6. Wait for response
