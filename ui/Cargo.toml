@@ -11,6 +11,7 @@ telegram_llm_core = { path = "../core" }
 time = { version = "0.3", features = ["formatting", "local-offset"] }
 arboard = "3.3"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
+base64 = "0.22"
 tracing = "0.1"
 
 [dev-dependencies]

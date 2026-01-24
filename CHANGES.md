@@ -1,5 +1,6 @@
 # Changes
 
+- Jan-24, 2026 - 08:55 PM +0800 - Fixed clipboard copy on headless systems by adding OSC 52 fallback.
 - Jan-24, 2026 - 08:15 PM +0800 - Resolved clipboard copy issues on Linux
   by implementing a prioritized CLI fallback (wl-copy/xclip/xsel), improving reliability
   and preventing terminal interference.

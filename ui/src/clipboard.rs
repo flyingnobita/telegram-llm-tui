@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use std::io::Write;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{channel, Sender};
@@ -75,13 +76,26 @@ pub fn spawn_worker(status_tx: Option<UnboundedSender<ClipboardResult>>) -> Send
                 }
             }
 
+            // 3. Try OSC 52 (Terminal fallback)
+            if !success {
+                match spawn_osc52_copy(&text) {
+                    Ok(_) => {
+                        info!("osc52 copy emitted");
+                        success = true;
+                    }
+                    Err(e) => {
+                        warn!("osc52 copy failed: {}", e);
+                    }
+                }
+            }
+
             // Report status
             if let Some(ref s) = status_tx {
                 if success {
                     let _ = s.send(ClipboardResult::Success);
                 } else {
                     let _ = s.send(ClipboardResult::Error(
-                        "All clipboard methods failed".to_string(),
+                        "Clipboard failed (tried xclip/wl-copy, arboard, osc52)".to_string(),
                     ));
                 }
             }
@@ -165,6 +179,34 @@ fn spawn_linux_cli_copy(text: &str) -> Result<Child, String> {
     }
 
     Err("No clipboard CLI tools found".to_string())
+}
+
+fn spawn_osc52_copy(text: &str) -> Result<(), String> {
+    // OSC 52 format: \x1b]52;c;<base64_encoded_content>\x07
+    // c indicates clipboard (p would be primary selection)
+    let encoded = STANDARD.encode(text);
+    let osc = format!("\x1b]52;c;{}\x07", encoded);
+
+    // We print directly to stdout/stderr as this is a TUI app where stdout is likely raw mode.
+    // However, we are in a background thread.
+    // Ideally we should print this to the TUI's output buffer, but `println!` might disrupt layout if not handled.
+    // In many TUI apps, writing OSC sequences to stderr or stdout works if the backend passes it through.
+    // Since we are in a separate thread, we can't easily write to the TUI buffer.
+    // But! TUI libraries usually put terminal in raw mode. Writing bytes might just work.
+    // Let's try writing to /dev/tty directly if possible, or just stdout.
+
+    // Using /dev/tty is safer for escape sequences to reach the terminal emulator directly
+    // regardless of stdout redirection (though usually not redirected in TUI).
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/tty")
+        .map_err(|e| format!("Failed to open /dev/tty: {}", e))?;
+
+    output
+        .write_all(osc.as_bytes())
+        .map_err(|e| format!("Failed to write to /dev/tty: {}", e))?;
+
+    Ok(())
 }
 
 fn is_command_available(cmd: &str) -> bool {
