@@ -1,5 +1,6 @@
 # Changes
 
+- Jan-24, 2026 - 04:40 PM +0800 - Fixed clippy warnings (unused import, redundant update, field assignment) in interaction UI.
 - Jan-24, 2026 - 01:10 AM +0800 - Fixed message timestamps to use local system
   timezone instead of UTC.
 - Jan-23, 2026 - 11:15 PM +0800 - Implemented Agent Mode for headless automation and testing, with support for Mock LLM and draft scenarios.

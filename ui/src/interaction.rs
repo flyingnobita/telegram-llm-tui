@@ -894,7 +894,6 @@ mod tests {
     use super::*;
     use crate::pane::{PaneState, PaneViewport};
     use crate::view::{ChatListItem, LogViewState, MessageItem};
-    use ratatui::prelude::Rect;
 
     fn sample_state() -> UiState {
         let mut state = UiState {
@@ -1151,9 +1150,10 @@ mod tests {
 
     #[test]
     fn opens_log_window_with_hotkey() {
-        let mut state = UiState::default();
-        // Setup logs to ensure open_log_view logic works
-        state.logs = vec!["test log".to_string()];
+        let mut state = UiState {
+            logs: vec!["test log".to_string()],
+            ..Default::default()
+        };
 
         let handled = handle_ui_key(
             &mut state,
@@ -1230,7 +1230,6 @@ mod tests {
                     ..PaneState::default()
                 },
                 sticky_scroll: false,
-                ..LogViewState::default()
             },
             ..UiState::default()
         };
