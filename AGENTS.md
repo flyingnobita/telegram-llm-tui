@@ -12,6 +12,9 @@ This repository follows **Agent Native Development (AND)** principles. The appli
 - **Post-Merge Verification:** After any merge, rebase, or conflict resolution, you **MUST** run the full test suite (`cargo test --workspace` or equivalent) to ensure no regressions were introduced. Do not ask the user to verify.
 - **Plan Updates:** If a task changes the state of a plan (e.g., completing a step), you must update `docs/plan-progress/` or `PLANS.md` as part of the PR/commit.
 - **ADR Adherence:** Check `docs/adr/` before major decisions. If a decision contradicts an ADR, stop and ask.
+- **GitHub Interaction:**
+  - **Primary:** Use `github-mcp-server` tools for all GitHub operations (checks, logs, commits, issues).
+  - **Fallback:** If the MCP server fails (e.g., 403 Forbidden on logs), **notify the user** immediately with the error details and suggested solutions. Do NOT default to browser automation without explicit permission.
 
 ## 2. Architecture Standards (The "Every" Model)
 
