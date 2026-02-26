@@ -39,6 +39,10 @@ use ui::bridge::UiCacheBridge;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// Optional command mode.
+    #[command(subcommand)]
+    command: Option<CommandMode>,
+
     /// Run in agent test mode with the specified scenario
     #[arg(long, value_name = "SCENARIO")]
     agent_test: Option<String>,
@@ -52,6 +56,23 @@ struct Args {
     agent_persist: bool,
 }
 
+#[derive(clap::Subcommand, Debug)]
+enum CommandMode {
+    /// Track actions.
+    Track(ActionScopeArgs),
+    /// Show actions.
+    Show(ActionScopeArgs),
+    /// View action history.
+    History(ActionScopeArgs),
+}
+
+#[derive(clap::Args, Debug)]
+struct ActionScopeArgs {
+    /// Apply the action to all platforms.
+    #[arg(long)]
+    all: bool,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -63,6 +84,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     let args = Args::parse();
+    if let Some(command) = &args.command {
+        let all = match command {
+            CommandMode::Track(action)
+            | CommandMode::Show(action)
+            | CommandMode::History(action) => action.all,
+        };
+        info!(?command, all, "received command mode arguments");
+    }
     let config = AppConfig::from_env()?;
     let console_gate = init_tracing(&config)?;
     info!("loaded configuration");
@@ -750,6 +779,33 @@ mod tests {
 
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
+        }
+    }
+
+    #[test]
+    fn command_mode_track_supports_all_flag() {
+        let args = Args::parse_from(["app", "track", "--all"]);
+        match args.command {
+            Some(CommandMode::Track(action)) => assert!(action.all),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn command_mode_show_supports_all_flag() {
+        let args = Args::parse_from(["app", "show", "--all"]);
+        match args.command {
+            Some(CommandMode::Show(action)) => assert!(action.all),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn command_mode_history_supports_all_flag() {
+        let args = Args::parse_from(["app", "history", "--all"]);
+        match args.command {
+            Some(CommandMode::History(action)) => assert!(action.all),
+            other => panic!("unexpected command: {other:?}"),
         }
     }
 
